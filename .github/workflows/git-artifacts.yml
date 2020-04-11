@@ -91,6 +91,18 @@ jobs:
             git fetch --tags bundle-artifacts/git.bundle `$(cat bundle-artifacts/next_version) &&
             git reset --hard `$(cat bundle-artifacts/next_version)
           "@
+      - name: Prepare home directory for code-signing
+        env:
+          CODESIGN_P12: ${{secrets.CODESIGN_P12}}
+          CODESIGN_PASS: ${{secrets.CODESIGN_PASS}}
+        if: env.CODESIGN_P12 != '' && env.CODESIGN_PASS != ''
+        shell: bash
+        run: |
+          cd home &&
+          mkdir -p .sig &&
+          echo "$CODESIGN_P12" | tr % '\n' | base64 -d >.sig/codesign.p12 &&
+          echo "$CODESIGN_PASS" >.sig/codesign.pass
+          git config --global alias.signtool '!sh "/usr/src/build-extra/signtool.sh"'
       - name: Prepare home directory for GPG signing
         if: env.GPGKEY != '' && env.PRIVGPGKEY != ''
         shell: bash
