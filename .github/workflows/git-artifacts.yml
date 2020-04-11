@@ -243,3 +243,39 @@ jobs:
         with:
           name: ${{matrix.artifact.name}}-${{matrix.arch.name}}
           path: artifacts
+  nuget:
+    runs-on: windows-latest
+    needs: pkg
+    steps:
+      - name: Download pkg-x86_64
+        uses: actions/download-artifact@v1
+        with:
+          name: pkg-x86_64
+          path: pkg-x86_64
+      - name: Download bundle-artifacts
+        uses: actions/download-artifact@v1
+        with:
+          name: bundle-artifacts
+          path: bundle-artifacts
+      - name: Download git-sdk-64-build-installers
+        shell: bash
+        run: a=git-sdk-64-build-installers && mkdir -p $a && curl -# https://wingit.blob.core.windows.net/ci-artifacts/$a.tar.xz | tar -C $a -xJf -
+      - name: Clone build-extra
+        run: git clone --single-branch -b master https://github.com/git-for-windows/build-extra git-sdk-64-build-installers\usr\src\build-extra
+      - uses: nuget/setup-nuget@v1
+      - name: Build 64-bit NuGet packages
+        shell: powershell
+        run: |
+          & .\git-sdk-64-build-installers\usr\bin\bash.exe -lc @"
+            set -x
+            # Update the release notes
+            git -C /usr/src/build-extra pull \"`$PWD\"/bundle-artifacts/build-extra.bundle master &&
+            /usr/src/build-extra/please.sh make_installers_from_mingw_w64_git --version=`$(cat pkg-x86_64/ver) -o artifacts --nuget --pkg=pkg-x86_64/mingw-w64-x86_64-git-[0-9]*.tar.xz --pkg=pkg-x86_64/mingw-w64-x86_64-git-doc-html-[0-9]*.tar.xz &&
+            /usr/src/build-extra/please.sh make_installers_from_mingw_w64_git --version=`$(cat pkg-x86_64/ver) -o artifacts --nuget-mingit &&
+            openssl dgst -sha256 artifacts/Git*.nupkg | sed \"s/.* //\" >artifacts/sha-256.txt
+          "@
+      - name: Publish nuget-x86_64
+        uses: actions/upload-artifact@v1
+        with:
+          name: nuget-x86_64
+          path: artifacts
