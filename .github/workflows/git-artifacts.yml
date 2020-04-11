@@ -6,6 +6,7 @@ on:
   - workflow_dispatch
 
 env:
+  GPG_OPTIONS: "--batch --yes --no-tty --list-options no-show-photos --verify-options no-show-photos --pinentry-mode loopback"
   HOME: "${{github.workspace}}\\home"
   MSYSTEM: MINGW64
   USERPROFILE: "${{github.workspace}}\\home"
@@ -22,7 +23,7 @@ jobs:
           mkdir "$HOME" &&
           git config --global user.name "$USER_NAME" &&
           git config --global user.email "$USER_EMAIL" &&
-          git config --global user.signingkey=mine &&
+          git config --global user.signingkey mine &&
           echo "PACKAGER=$USER_NAME <$USER_EMAIL>" >>$GITHUB_ENV
       - name: Download git-sdk-64-build-installers
         shell: bash
@@ -47,7 +48,21 @@ jobs:
           unzip artifacts.zip
       - name: Clone build-extra
         run: git clone --single-branch -b main https://github.com/git-for-windows/build-extra git-sdk-64-build-installers\usr\src\build-extra
+      - name: Prepare home directory for GPG signing
+        if: env.GPGKEY != '' && env.PRIVGPGKEY != ''
+        shell: bash
+        run: |
+          echo '$PRIVGPGKEY' | tr % '\\n' | gpg $env:GPG_OPTIONS --import &&
+          mkdir -p home &&
+          git config --global gpg.program "$PWD/git-sdk-64/usr/src/build-extra/gnupg-with-gpgkey.sh" &&
+          info="$(gpg --list-keys --with-colons "${GPGKEY%% *}" | cut -d : -f 1,10 | sed -n '/^uid/{s|uid:||p;q}')" &&
+          git config --global user.name "${info% <*}" &&
+          git config --global user.email "<${info#*<}"
+        env:
+          PRIVGPGKEY: ${{secrets.PRIVGPGKEY}}
       - name: Generate bundle artifacts
+        env:
+          GPGKEY: ${{secrets.GPGKEY}}
         shell: powershell
         run: |
           & .\git-sdk-64-build-installers\git-cmd.exe --command=usr\bin\bash.exe -lc @"
@@ -62,12 +77,16 @@ jobs:
             echo \"prerelease-`${tag_name#v}\" >bundle-artifacts/ver &&
             echo \"`${tag_name#v}\" >bundle-artifacts/display_version &&
             echo \"`$tag_name\" >bundle-artifacts/next_version &&
-            git tag -m \"Snapshot build\" \"`$tag_name\" FETCH_HEAD &&
+            git tag `$(test -z \"`$GPGKEY\" || echo \" -s\") -m \"Snapshot build\" \"`$tag_name\" FETCH_HEAD &&
             git bundle create bundle-artifacts/git.bundle origin/main..\"`$tag_name\" &&
 
             sh -x /usr/src/build-extra/please.sh mention feature \"Snapshot of `$(git show -s  --pretty='tformat:%h (%s, %ad)' --date=short FETCH_HEAD)\" &&
             git -C /usr/src/build-extra bundle create \"`$PWD/bundle-artifacts/build-extra.bundle\" origin/main..main
           "@
+      - name: Clean up temporary files
+        if: always()
+        shell: bash
+        run: rm -rf home
       - name: 'Publish Pipeline Artifact: bundle-artifacts'
         uses: actions/upload-artifact@v1
         with:
@@ -85,7 +104,7 @@ jobs:
           mkdir "$HOME" &&
           git config --global user.name "$USER_NAME" &&
           git config --global user.email "$USER_EMAIL" &&
-          git config --global user.signingkey=mine &&
+          git config --global user.signingkey mine &&
           echo "PACKAGER=$USER_NAME <$USER_EMAIL>" >>$GITHUB_ENV
       - name: Download git-sdk-64-makepkg-git
         shell: bash
@@ -107,7 +126,19 @@ jobs:
             git fetch --tags bundle-artifacts/git.bundle `$(cat bundle-artifacts/next_version) &&
             git reset --hard `$(cat bundle-artifacts/next_version)
           "@
+      - name: Prepare home directory for GPG signing
+        if: env.GPGKEY != '' && env.PRIVGPGKEY != ''
+        shell: bash
+        run: |
+          echo '$PRIVGPGKEY' | tr % '\\n' | gpg $env:GPG_OPTIONS --import &&
+          info="$(gpg --list-keys --with-colons "${GPGKEY%% *}" | cut -d : -f 1,10 | sed -n '/^uid/{s|uid:||p;q}')" &&
+          git config --global user.name "${info% <*}" &&
+          git config --global user.email "<${info#*<}"
+        env:
+          PRIVGPGKEY: ${{secrets.PRIVGPGKEY}}
       - name: Build mingw-w64-x86_64-git
+        env:
+          GPGKEY: "${{secrets.GPGKEY}}"
         shell: powershell
         run: |
           & git-sdk-64-makepkg-git\usr\bin\sh.exe -lc @"
@@ -117,6 +148,13 @@ jobs:
             type -p mspdb140.dll || exit 1
             sh -x /usr/src/build-extra/please.sh build-mingw-w64-git --only-64-bit --build-src-pkg -o artifacts HEAD &&
             cp bundle-artifacts/ver artifacts/ &&
+            if test -n \"`$GPGKEY\"
+            then
+              for tar in artifacts/*.tar*
+              do
+                /usr/src/build-extra/gnupg-with-gpgkey.sh --detach-sign --no-armor `$tar
+              done
+            fi &&
 
             b=`$PWD/artifacts &&
             version=`$(cat bundle-artifacts/next_version) &&
@@ -125,6 +163,10 @@ jobs:
             git commit -s -m \"mingw-w64-git: new version (`$version)\" PKGBUILD &&
             git bundle create \"`$b\"/MINGW-packages.bundle origin/main..main)
           "@
+      - name: Clean up temporary files
+        if: always()
+        shell: bash
+        run: rm -rf home
       - name: Publish mingw-w64-x86_64-git
         uses: actions/upload-artifact@v1
         with:
