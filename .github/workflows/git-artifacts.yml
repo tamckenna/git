@@ -1,6 +1,11 @@
 name: git-artifacts
 
 on:
+  # Uncomment the "push:" line if you want to build artifacts without sending
+  # a `repository_dispatch` event, and possibly set the environment variables
+  # `BUILD_ONLY`, `REPOSITORY` and `REF` explicitly.
+  #
+  # push:
   repository_dispatch:
     types:
       - git-artifacts
