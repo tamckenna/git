@@ -13,6 +13,8 @@ env:
   PACKAGER: ${{github.actor}} <${{github.actor}}@users.noreply.github.com>
   USERPROFILE: "${{github.workspace}}\\home"
   BUILD_ONLY: "${{github.event.client_payload.build_only}}"
+  REPOSITORY: "${{github.event.client_payload.repository}}"
+  REF: "${{github.event.client_payload.ref}}"
 
 jobs:
   bundle-artifacts:
@@ -45,9 +47,11 @@ jobs:
             printf '#!/bin/sh\n\nexec /mingw64/bin/git.exe "`$@"\n' >/usr/bin/git &&
             mkdir -p bundle-artifacts &&
 
+            { test -n \"`$REPOSITORY\" || REPOSITORY='${{github.repository}}'; } &&
+            { test -n \"`$REF\" || REF='${{github.ref}}'; } &&
             git init --bare &&
             git remote add -f origin https://github.com/git-for-windows/git &&
-            git fetch https://github.com/${{github.repository}} ${{github.ref}}:${{github.ref}} &&
+            git fetch \"https://github.com/`$REPOSITORY\" \"`$REF:`$REF\" &&
 
             tag_name=\"`$(git describe --match 'v[0-9]*' FETCH_HEAD)-`$(date +%Y%m%d%H%M%S)\" &&
             echo \"prerelease-`${tag_name#v}\" >bundle-artifacts/ver &&
