@@ -13,9 +13,8 @@ test_description='git mktag: tag object verify test'
 
 check_verify_failure () {
 	test_expect_success "$1" "
-		test_must_fail env GIT_TEST_GETTEXT_POISON=false \
-			git mktag <tag.sig 2>message &&
-		grep '$2' message &&
+		test_must_fail git mktag <tag.sig 2>message &&
+		test_i18ngrep '$2' message &&
 		if test '$3' != '--no-strict'
 		then
 			test_must_fail env GIT_TEST_GETTEXT_POISON=false \
