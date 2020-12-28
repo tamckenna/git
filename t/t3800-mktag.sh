@@ -17,9 +17,8 @@ check_verify_failure () {
 		test_i18ngrep '$2' message &&
 		if test '$3' != '--no-strict'
 		then
-			test_must_fail env GIT_TEST_GETTEXT_POISON=false \
-				git mktag --no-strict <tag.sig 2>message.no-strict &&
-			grep '$2' message.no-strict
+			test_must_fail git mktag --no-strict <tag.sig 2>message.no-strict &&
+			test_i18ngrep '$2' message.no-strict
 		fi
 	"
 }
