@@ -14,7 +14,7 @@
 #include "mergesort.h"
 #include "commit-slab.h"
 #include "prio-queue.h"
-#include "sha1-lookup.h"
+#include "hash-lookup.h"
 #include "wt-status.h"
 #include "advice.h"
 #include "refs.h"
@@ -113,7 +113,7 @@ static const unsigned char *commit_graft_sha1_access(size_t index, void *table)
 
 int commit_graft_pos(struct repository *r, const unsigned char *sha1)
 {
-	return sha1_pos(sha1, r->parsed_objects->grafts,
+	return hash_pos(sha1, r->parsed_objects->grafts,
 			r->parsed_objects->grafts_nr,
 			commit_graft_sha1_access);
 }
@@ -544,6 +544,17 @@ struct commit_list *commit_list_insert(struct commit *item, struct commit_list *
 	return new_list;
 }
 
+int commit_list_contains(struct commit *item, struct commit_list *list)
+{
+	while (list) {
+		if (list->item == item)
+			return 1;
+		list = list->next;
+	}
+
+	return 0;
+}
+
 unsigned commit_list_count(const struct commit_list *l)
 {
 	unsigned c = 0;
@@ -561,6 +572,17 @@ struct commit_list *copy_commit_list(struct commit_list *list)
 		list = list->next;
 	}
 	return head;
+}
+
+struct commit_list *reverse_commit_list(struct commit_list *list)
+{
+	struct commit_list *next = NULL, *current, *backup;
+	for (current = list; current; current = backup) {
+		backup = current->next;
+		current->next = next;
+		next = current;
+	}
+	return next;
 }
 
 void free_commit_list(struct commit_list *list)
@@ -921,7 +943,7 @@ struct commit *get_fork_point(const char *refname, struct commit *commit)
 	struct commit *ret = NULL;
 	char *full_refname;
 
-	switch (dwim_ref(refname, strlen(refname), &oid, &full_refname)) {
+	switch (dwim_ref(refname, strlen(refname), &oid, &full_refname, 0)) {
 	case 0:
 		die("No such ref: '%s'", refname);
 	case 1:
@@ -1316,8 +1338,8 @@ int commit_tree(const char *msg, size_t msg_len, const struct object_id *tree,
 	int result;
 
 	append_merge_tag_headers(parents, &tail);
-	result = commit_tree_extended(msg, msg_len, tree, parents, ret,
-				      author, sign_commit, extra);
+	result = commit_tree_extended(msg, msg_len, tree, parents, ret, author,
+				      NULL, sign_commit, extra);
 	free_commit_extra_headers(extra);
 	return result;
 }
@@ -1440,7 +1462,8 @@ N_("Warning: commit message did not conform to UTF-8.\n"
 int commit_tree_extended(const char *msg, size_t msg_len,
 			 const struct object_id *tree,
 			 struct commit_list *parents, struct object_id *ret,
-			 const char *author, const char *sign_commit,
+			 const char *author, const char *committer,
+			 const char *sign_commit,
 			 struct commit_extra_header *extra)
 {
 	int result;
@@ -1473,7 +1496,9 @@ int commit_tree_extended(const char *msg, size_t msg_len,
 	if (!author)
 		author = git_author_info(IDENT_STRICT);
 	strbuf_addf(&buffer, "author %s\n", author);
-	strbuf_addf(&buffer, "committer %s\n", git_committer_info(IDENT_STRICT));
+	if (!committer)
+		committer = git_committer_info(IDENT_STRICT);
+	strbuf_addf(&buffer, "committer %s\n", committer);
 	if (!encoding_is_utf8)
 		strbuf_addf(&buffer, "encoding %s\n", git_commit_encoding);
 
@@ -1583,7 +1608,7 @@ const char *find_commit_header(const char *msg, const char *key, size_t *out_len
 
 /*
  * Inspect the given string and determine the true "end" of the log message, in
- * order to find where to put a new Signed-off-by: line.  Ignored are
+ * order to find where to put a new Signed-off-by trailer.  Ignored are
  * trailing comment lines and blank lines.  To support "git commit -s
  * --amend" on an existing commit, we also ignore "Conflicts:".  To
  * support "git commit -v", we truncate at cut lines.

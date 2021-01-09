@@ -178,19 +178,28 @@ debug () {
 	GIT_DEBUGGER="${GIT_DEBUGGER}" "$@" <&6 >&5 2>&7
 }
 
-# Call test_commit with the arguments
-# [-C <directory>] <message> [<file> [<contents> [<tag>]]]"
+# Usage: test_commit [options] <message> [<file> [<contents> [<tag>]]]
+#   -C <dir>:
+#	Run all git commands in directory <dir>
+#   --notick
+#	Do not call test_tick before making a commit
+#   --append
+#	Use "echo >>" instead of "echo >" when writing "<contents>" to
+#	"<file>"
+#   --signoff
+#	Invoke "git commit" with --signoff
+#   --author <author>
+#	Invoke "git commit" with --author <author>
 #
 # This will commit a file with the given contents and the given commit
 # message, and tag the resulting commit with the given tag name.
 #
 # <file>, <contents>, and <tag> all default to <message>.
-#
-# If the first argument is "-C", the second argument is used as a path for
-# the git invocations.
 
 test_commit () {
 	notick= &&
+	append= &&
+	author= &&
 	signoff= &&
 	indir= &&
 	while test $# != 0
@@ -198,6 +207,13 @@ test_commit () {
 		case "$1" in
 		--notick)
 			notick=yes
+			;;
+		--append)
+			append=yes
+			;;
+		--author)
+			author="$2"
+			shift
 			;;
 		--signoff)
 			signoff="$1"
@@ -214,13 +230,20 @@ test_commit () {
 	done &&
 	indir=${indir:+"$indir"/} &&
 	file=${2:-"$1.t"} &&
-	echo "${3-$1}" > "$indir$file" &&
+	if test -n "$append"
+	then
+		echo "${3-$1}" >>"$indir$file"
+	else
+		echo "${3-$1}" >"$indir$file"
+	fi &&
 	git ${indir:+ -C "$indir"} add "$file" &&
 	if test -z "$notick"
 	then
 		test_tick
 	fi &&
-	git ${indir:+ -C "$indir"} commit $signoff -m "$1" &&
+	git ${indir:+ -C "$indir"} commit \
+	    ${author:+ --author "$author"} \
+	    $signoff -m "$1" &&
 	git ${indir:+ -C "$indir"} tag "${4:-$1}"
 }
 
@@ -367,9 +390,14 @@ test_chmod () {
 	git update-index --add "--chmod=$@"
 }
 
-# Get the modebits from a file.
+# Get the modebits from a file or directory, ignoring the setgid bit (g+s).
+# This bit is inherited by subdirectories at their creation. So we remove it
+# from the returning string to prevent callers from having to worry about the
+# state of the bit in the test directory.
+#
 test_modebits () {
-	ls -l "$1" | sed -e 's|^\(..........\).*|\1|'
+	ls -ld "$1" | sed -e 's|^\(..........\).*|\1|' \
+			  -e 's|^\(......\)S|\1-|' -e 's|^\(......\)s|\1x|'
 }
 
 # Unset a configuration variable, but don't fail if it doesn't exist.
@@ -423,7 +451,7 @@ write_script () {
 # - Explicitly using test_have_prereq.
 #
 # - Implicitly by specifying the prerequisite tag in the calls to
-#   test_expect_{success,failure,code}.
+#   test_expect_{success,failure} and test_external{,_without_stderr}.
 #
 # The single parameter is the prerequisite tag (a simple word, in all
 # capital letters by convention).
@@ -474,15 +502,15 @@ test_lazy_prereq () {
 
 test_run_lazy_prereq_ () {
 	script='
-mkdir -p "$TRASH_DIRECTORY/prereq-test-dir" &&
+mkdir -p "$TRASH_DIRECTORY/prereq-test-dir-'"$1"'" &&
 (
-	cd "$TRASH_DIRECTORY/prereq-test-dir" &&'"$2"'
+	cd "$TRASH_DIRECTORY/prereq-test-dir-'"$1"'" &&'"$2"'
 )'
 	say >&3 "checking prerequisite: $1"
 	say >&3 "$script"
 	test_eval_ "$script"
 	eval_ret=$?
-	rm -rf "$TRASH_DIRECTORY/prereq-test-dir"
+	rm -rf "$TRASH_DIRECTORY/prereq-test-dir-$1"
 	if test "$eval_ret" = 0; then
 		say >&3 "prerequisite $1 ok"
 	else
@@ -783,6 +811,10 @@ test_line_count () {
 	fi
 }
 
+test_file_size () {
+	test-tool path-utils file-size "$1"
+}
+
 # Returns success if a comma separated string of keywords ($1) contains a
 # given keyword ($2).
 # Examples:
@@ -820,7 +852,7 @@ test_must_fail_acceptable () {
 	fi
 
 	case "$1" in
-	git|__git*|test-tool|test-svn-fe|test_terminal)
+	git|__git*|test-tool|test_terminal)
 		return 0
 		;;
 	*)
@@ -951,14 +983,8 @@ test_expect_code () {
 # - cmp's output is not nearly as easy to read as diff -u
 # - not all diff versions understand "-u"
 
-test_cmp() {
-	test $# -eq 2 || BUG "test_cmp requires two arguments"
-	if ! eval "$GIT_TEST_CMP" '"$@"'
-	then
-		test "x$1" = x- || test -e "$1" || BUG "test_cmp '$1' missing"
-		test "x$2" = x- || test -e "$2" || BUG "test_cmp '$2' missing"
-		return 1
-	fi
+test_cmp () {
+	GIT_ALLOC_LIMIT=0 eval "$GIT_TEST_CMP" '"$@"'
 }
 
 # Check that the given config key has the expected value.
@@ -970,7 +996,7 @@ test_cmp() {
 #
 #    test_cmp_config foo core.bar
 #
-test_cmp_config() {
+test_cmp_config () {
 	local GD &&
 	if test "$1" = "-C"
 	then
@@ -986,14 +1012,8 @@ test_cmp_config() {
 
 # test_cmp_bin - helper to compare binary files
 
-test_cmp_bin() {
-	test $# -eq 2 || BUG "test_cmp_bin requires two arguments"
-	if ! cmp "$@"
-	then
-		test "x$1" = x- || test -e "$1" || BUG "test_cmp_bin '$1' missing"
-		test "x$2" = x- || test -e "$2" || BUG "test_cmp_bin '$2' missing"
-		return 1
-	fi
+test_cmp_bin () {
+	cmp "$@"
 }
 
 # Use this instead of test_cmp to compare files that contain expected and
@@ -1210,7 +1230,9 @@ test_create_repo () {
 	mkdir -p "$repo"
 	(
 		cd "$repo" || error "Cannot setup test environment"
-		"${GIT_TEST_INSTALLED:-$GIT_EXEC_PATH}/git$X" init \
+		"${GIT_TEST_INSTALLED:-$GIT_EXEC_PATH}/git$X" -c \
+			init.defaultBranch="${GIT_TEST_DEFAULT_INITIAL_BRANCH_NAME-master}" \
+			init \
 			"--template=$GIT_BUILD_DIR/templates/blt/" >&3 2>&4 ||
 		error "cannot run git init -- have you built things yet?"
 		mv .git/hooks .git/hooks-disabled
@@ -1289,72 +1311,6 @@ test_skip_or_die () {
 	error "$2"
 }
 
-# The following mingw_* functions obey POSIX shell syntax, but are actually
-# bash scripts, and are meant to be used only with bash on Windows.
-
-# A test_cmp function that treats LF and CRLF equal and avoids to fork
-# diff when possible.
-mingw_test_cmp () {
-	# Read text into shell variables and compare them. If the results
-	# are different, use regular diff to report the difference.
-	local test_cmp_a= test_cmp_b=
-
-	# When text came from stdin (one argument is '-') we must feed it
-	# to diff.
-	local stdin_for_diff=
-
-	# Since it is difficult to detect the difference between an
-	# empty input file and a failure to read the files, we go straight
-	# to diff if one of the inputs is empty.
-	if test -s "$1" && test -s "$2"
-	then
-		# regular case: both files non-empty
-		mingw_read_file_strip_cr_ test_cmp_a <"$1"
-		mingw_read_file_strip_cr_ test_cmp_b <"$2"
-	elif test -s "$1" && test "$2" = -
-	then
-		# read 2nd file from stdin
-		mingw_read_file_strip_cr_ test_cmp_a <"$1"
-		mingw_read_file_strip_cr_ test_cmp_b
-		stdin_for_diff='<<<"$test_cmp_b"'
-	elif test "$1" = - && test -s "$2"
-	then
-		# read 1st file from stdin
-		mingw_read_file_strip_cr_ test_cmp_a
-		mingw_read_file_strip_cr_ test_cmp_b <"$2"
-		stdin_for_diff='<<<"$test_cmp_a"'
-	fi
-	test -n "$test_cmp_a" &&
-	test -n "$test_cmp_b" &&
-	test "$test_cmp_a" = "$test_cmp_b" ||
-	eval "diff -u \"\$@\" $stdin_for_diff"
-}
-
-# $1 is the name of the shell variable to fill in
-mingw_read_file_strip_cr_ () {
-	# Read line-wise using LF as the line separator
-	# and use IFS to strip CR.
-	local line
-	while :
-	do
-		if IFS=$'\r' read -r -d $'\n' line
-		then
-			# good
-			line=$line$'\n'
-		else
-			# we get here at EOF, but also if the last line
-			# was not terminated by LF; in the latter case,
-			# some text was read
-			if test -z "$line"
-			then
-				# EOF, really
-				break
-			fi
-		fi
-		eval "$1=\$$1\$line"
-	done
-}
-
 # Like "env FOO=BAR some-program", but run inside a subshell, which means
 # it also works for shell functions (though those functions cannot impact
 # the environment outside of the test_env invocation).
@@ -1426,7 +1382,7 @@ nongit () {
 # whitespace and put in a single packet. Note that data containing NULs must be
 # given on stdin, and that empty input becomes an empty packet, not a flush
 # packet (for that you can just print 0000 yourself).
-packetize() {
+packetize () {
 	if test $# -gt 0
 	then
 		packet="$*"

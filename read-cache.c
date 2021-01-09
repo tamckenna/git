@@ -89,8 +89,10 @@ static struct mem_pool *find_mem_pool(struct index_state *istate)
 	else
 		pool_ptr = &istate->ce_mem_pool;
 
-	if (!*pool_ptr)
-		mem_pool_init(pool_ptr, 0);
+	if (!*pool_ptr) {
+		*pool_ptr = xmalloc(sizeof(**pool_ptr));
+		mem_pool_init(*pool_ptr, 0);
+	}
 
 	return *pool_ptr;
 }
@@ -451,6 +453,17 @@ int ie_modified(struct index_state *istate,
 	 * then we know it is.
 	 */
 	if ((changed & DATA_CHANGED) &&
+#ifdef GIT_WINDOWS_NATIVE
+	    /*
+	     * Work around Git for Windows v2.27.0 fixing a bug where symlinks'
+	     * target path lengths were not read at all, and instead recorded
+	     * as 4096: now, all symlinks would appear as modified.
+	     *
+	     * So let's just special-case symlinks with a target path length
+	     * (i.e. `sd_size`) of 4096 and force them to be re-checked.
+	     */
+	    (!S_ISLNK(st->st_mode) || ce->ce_stat_data.sd_size != MAX_LONG_PATH) &&
+#endif
 	    (S_ISGITLINK(ce->ce_mode) || ce->ce_stat_data.sd_size != 0))
 		return changed;
 
@@ -1528,6 +1541,7 @@ int refresh_index(struct index_state *istate, unsigned int flags,
 	typechange_fmt = in_porcelain ? "T\t%s\n" : "%s: needs update\n";
 	added_fmt      = in_porcelain ? "A\t%s\n" : "%s: needs update\n";
 	unmerged_fmt   = in_porcelain ? "U\t%s\n" : "%s: needs merge\n";
+	enable_fscache(0);
 	/*
 	 * Use the multi-threaded preload_index() to refresh most of the
 	 * cache entries quickly then in the single threaded loop below,
@@ -1605,6 +1619,7 @@ int refresh_index(struct index_state *istate, unsigned int flags,
 		stop_progress(&progress);
 	}
 	trace_performance_leave("refresh index");
+	disable_fscache();
 	return has_errors;
 }
 
@@ -2006,11 +2021,12 @@ static unsigned long load_all_cache_entries(struct index_state *istate,
 {
 	unsigned long consumed;
 
+	istate->ce_mem_pool = xmalloc(sizeof(*istate->ce_mem_pool));
 	if (istate->version == 4) {
-		mem_pool_init(&istate->ce_mem_pool,
+		mem_pool_init(istate->ce_mem_pool,
 				estimate_cache_size_from_compressed(istate->cache_nr));
 	} else {
-		mem_pool_init(&istate->ce_mem_pool,
+		mem_pool_init(istate->ce_mem_pool,
 				estimate_cache_size(mmap_size, istate->cache_nr));
 	}
 
@@ -2070,7 +2086,8 @@ static unsigned long load_cache_entries_threaded(struct index_state *istate, con
 	if (istate->name_hash_initialized)
 		BUG("the name hash isn't thread safe");
 
-	mem_pool_init(&istate->ce_mem_pool, 0);
+	istate->ce_mem_pool = xmalloc(sizeof(*istate->ce_mem_pool));
+	mem_pool_init(istate->ce_mem_pool, 0);
 
 	/* ensure we have no more threads than we have blocks to process */
 	if (nr_threads > ieot->nr)
@@ -2097,11 +2114,12 @@ static unsigned long load_cache_entries_threaded(struct index_state *istate, con
 		nr = 0;
 		for (j = p->ieot_start; j < p->ieot_start + p->ieot_blocks; j++)
 			nr += p->ieot->entries[j].nr;
+		p->ce_mem_pool = xmalloc(sizeof(*istate->ce_mem_pool));
 		if (istate->version == 4) {
-			mem_pool_init(&p->ce_mem_pool,
+			mem_pool_init(p->ce_mem_pool,
 				estimate_cache_size_from_compressed(nr));
 		} else {
-			mem_pool_init(&p->ce_mem_pool,
+			mem_pool_init(p->ce_mem_pool,
 				estimate_cache_size(mmap_size, nr));
 		}
 
@@ -2358,7 +2376,7 @@ int discard_index(struct index_state *istate)
 
 	if (istate->ce_mem_pool) {
 		mem_pool_discard(istate->ce_mem_pool, should_validate_cache_entries());
-		istate->ce_mem_pool = NULL;
+		FREE_AND_NULL(istate->ce_mem_pool);
 	}
 
 	return 0;
@@ -3009,10 +3027,10 @@ static int do_write_index(struct index_state *istate, struct tempfile *tempfile,
 	if (ce_flush(&c, newfd, istate->oid.hash))
 		return -1;
 	if (close_tempfile_gently(tempfile)) {
-		error(_("could not close '%s'"), tempfile->filename.buf);
+		error(_("could not close '%s'"), get_tempfile_path(tempfile));
 		return -1;
 	}
-	if (stat(tempfile->filename.buf, &st))
+	if (stat(get_tempfile_path(tempfile), &st))
 		return -1;
 	istate->timestamp.sec = (unsigned int)st.st_mtime;
 	istate->timestamp.nsec = ST_MTIME_NSEC(st);
@@ -3053,10 +3071,10 @@ static int do_write_locked_index(struct index_state *istate, struct lock_file *l
 	 * that is associated with the given "istate".
 	 */
 	trace2_region_enter_printf("index", "do_write_index", the_repository,
-				   "%s", lock->tempfile->filename.buf);
+				   "%s", get_lock_file_path(lock));
 	ret = do_write_index(istate, lock->tempfile, 0);
 	trace2_region_leave_printf("index", "do_write_index", the_repository,
-				   "%s", lock->tempfile->filename.buf);
+				   "%s", get_lock_file_path(lock));
 
 	if (ret)
 		return ret;
@@ -3153,10 +3171,10 @@ static int write_shared_index(struct index_state *istate,
 	move_cache_to_base_index(istate);
 
 	trace2_region_enter_printf("index", "shared/do_write_index",
-				   the_repository, "%s", (*temp)->filename.buf);
+				   the_repository, "%s", get_tempfile_path(*temp));
 	ret = do_write_index(si->base, *temp, 1);
 	trace2_region_leave_printf("index", "shared/do_write_index",
-				   the_repository, "%s", (*temp)->filename.buf);
+				   the_repository, "%s", get_tempfile_path(*temp));
 
 	if (ret)
 		return ret;

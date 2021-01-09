@@ -1052,7 +1052,7 @@ static const char *get_ssh_command(void)
 	if ((ssh = getenv("GIT_SSH_COMMAND")))
 		return ssh;
 
-	if (!git_config_get_string_const("core.sshcommand", &ssh))
+	if (!git_config_get_string_tmp("core.sshcommand", &ssh))
 		return ssh;
 
 	return NULL;
@@ -1071,7 +1071,7 @@ static void override_ssh_variant(enum ssh_variant *ssh_variant)
 {
 	const char *variant = getenv("GIT_SSH_VARIANT");
 
-	if (!variant && git_config_get_string_const("ssh.variant", &variant))
+	if (!variant && git_config_get_string_tmp("ssh.variant", &variant))
 		return;
 
 	if (!strcmp(variant, "auto"))
@@ -1160,6 +1160,8 @@ static struct child_process *git_connect_git(int fd[2], char *hostandport,
 		target_host = xstrdup(hostandport);
 
 	transport_check_allowed("git");
+	if (strchr(target_host, '\n') || strchr(path, '\n'))
+		die(_("newline is forbidden in git:// hosts and repo paths"));
 
 	/*
 	 * These underlying connection commands die() if they

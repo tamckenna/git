@@ -82,9 +82,9 @@ typedef enum parse_opt_result parse_opt_ll_cb(struct parse_opt_ctx_t *ctx,
  *   stores pointers to the values to be filled.
  *
  * `argh`::
- *   token to explain the kind of argument this option wants. Keep it
- *   homogeneous across the repository. Should be wrapped by N_() for
- *   translation.
+ *   token to explain the kind of argument this option wants. Does not
+ *   begin in capital letter, and does not end with a full stop.
+ *   Should be wrapped by N_() for translation.
  *
  * `help`::
  *   the short help associated to what the option does.
@@ -314,7 +314,7 @@ int parse_opt_passthru_argv(const struct option *, const char *, int);
 #define OPT__FORCE(var, h, f) OPT_COUNTUP_F('f', "force",   (var), (h), (f))
 #define OPT__ABBREV(var)  \
 	{ OPTION_CALLBACK, 0, "abbrev", (var), N_("n"),	\
-	  N_("use <n> digits to display SHA-1s"),	\
+	  N_("use <n> digits to display object names"),	\
 	  PARSE_OPT_OPTARG, &parse_opt_abbrev_cb, 0 }
 #define OPT__COLOR(var, h) \
 	OPT_COLOR_FLAG(0, "color", (var), (h))

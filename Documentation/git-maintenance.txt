@@ -38,7 +38,7 @@ register::
 	for running in the background without disrupting foreground
 	processes.
 +
-The `register` subcomand will also set the `maintenance.strategy` config
+The `register` subcommand will also set the `maintenance.strategy` config
 value to `incremental`, if this value is not previously set. The
 `incremental` strategy uses the following schedule for each maintenance
 task:
@@ -101,7 +101,7 @@ This is done to avoid disrupting the remote-tracking branches. The end users
 expect these refs to stay unmoved unless they initiate a fetch.  With prefetch
 task, however, the objects necessary to complete a later real fetch would
 already be obtained, so the real fetch would go faster.  In the ideal case,
-it will just become an update to bunch of remote-tracking branches without
+it will just become an update to a bunch of remote-tracking branches without
 any object transfer.
 
 gc::

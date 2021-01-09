@@ -2,6 +2,9 @@
 
 test_description=clone
 
+GIT_TEST_DEFAULT_INITIAL_BRANCH_NAME=main
+export GIT_TEST_DEFAULT_INITIAL_BRANCH_NAME
+
 . ./test-lib.sh
 
 X=
@@ -66,6 +69,13 @@ test_expect_success 'clone respects GIT_WORK_TREE' '
 	test -f bare/config &&
 	test -f worktree/file
 
+'
+
+test_expect_success CASE_INSENSITIVE_FS 'core.worktree is not added due to path case' '
+
+	mkdir UPPERCASE &&
+	git clone src "$(pwd)/uppercase" &&
+	test "unset" = "$(git -C UPPERCASE config --default unset core.worktree)"
 '
 
 test_expect_success 'clone from hooks' '
@@ -217,7 +227,7 @@ test_expect_success 'clone respects global branch.autosetuprebase' '
 		rm -fr dst &&
 		git clone src dst &&
 		cd dst &&
-		actual="z$(git config branch.master.rebase)" &&
+		actual="z$(git config branch.main.rebase)" &&
 		test ztrue = $actual
 	)
 '
@@ -591,7 +601,7 @@ test_expect_success 'clone from a repository with two identical branches' '
 
 	(
 		cd src &&
-		git checkout -b another master
+		git checkout -b another main
 	) &&
 	git clone src target-11 &&
 	test "z$( cd target-11 && git symbolic-ref HEAD )" = zrefs/heads/another
@@ -629,6 +639,20 @@ test_expect_success CASE_INSENSITIVE_FS 'colliding file detection' '
 	grep X icasefs/warning &&
 	grep x icasefs/warning &&
 	test_i18ngrep "the following paths have collided" icasefs/warning
+'
+
+test_expect_success 'clone with GIT_DEFAULT_HASH' '
+	(
+		sane_unset GIT_DEFAULT_HASH &&
+		git init --object-format=sha1 test-sha1 &&
+		git init --object-format=sha256 test-sha256
+	) &&
+	test_commit -C test-sha1 foo &&
+	test_commit -C test-sha256 foo &&
+	GIT_DEFAULT_HASH=sha1 git clone test-sha256 test-clone-sha256 &&
+	GIT_DEFAULT_HASH=sha256 git clone test-sha1 test-clone-sha1 &&
+	git -C test-clone-sha1 status &&
+	git -C test-clone-sha256 status
 '
 
 partial_clone_server () {
@@ -669,7 +693,8 @@ test_expect_success 'partial clone' '
 
 test_expect_success 'partial clone with -o' '
 	partial_clone_server server &&
-	git clone -o blah --filter=blob:limit=0 "file://$(pwd)/server" client
+	git clone -o blah --filter=blob:limit=0 "file://$(pwd)/server" client &&
+	test_cmp_config -C client "blob:limit=0" --get-all remote.blah.partialclonefilter
 '
 
 test_expect_success 'partial clone: warn if server does not support object filtering' '
@@ -704,7 +729,7 @@ test_expect_success 'batch missing blob request during checkout' '
 	# Ensure that there is only one negotiation by checking that there is
 	# only "done" line sent. ("done" marks the end of negotiation.)
 	GIT_TRACE_PACKET="$(pwd)/trace" git -C client checkout HEAD^ &&
-	grep "git> done" trace >done_lines &&
+	grep "fetch> done" trace >done_lines &&
 	test_line_count = 1 done_lines
 '
 
