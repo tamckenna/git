@@ -170,9 +170,12 @@ int repo_init(struct repository *repo,
 		goto error;
 
 	repo_set_hash_algo(repo, format.hash_algo);
+	repo->worktree_config_extension = format.worktree_config;
 
 	if (worktree)
 		repo_set_worktree(repo, worktree);
+
+	repo->ref_storage_format = xstrdup_or_null(format.ref_storage);
 
 	clear_repository_format(&format);
 	return 0;
@@ -263,6 +266,12 @@ int repo_read_index(struct repository *repo)
 {
 	if (!repo->index)
 		repo->index = xcalloc(1, sizeof(*repo->index));
+
+	/* Complete the double-reference */
+	if (!repo->index->repo)
+		repo->index->repo = repo;
+	else if (repo->index->repo != repo)
+		BUG("repo's index should point back at itself");
 
 	return read_index_from(repo->index, repo->index_file, repo->gitdir);
 }

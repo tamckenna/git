@@ -5,6 +5,9 @@
 
 test_description='Test of the various options to git rm.'
 
+GIT_TEST_DEFAULT_INITIAL_BRANCH_NAME=main
+export GIT_TEST_DEFAULT_INITIAL_BRANCH_NAME
+
 . ./test-lib.sh
 
 # Setup some files to be removed, some with funny characters
@@ -240,7 +243,7 @@ test_expect_success 'refresh index before checking if it is up-to-date' '
 	test_path_is_missing frotz/nitfol
 '
 
-test_expect_success 'choking "git rm" should not let it die with cruft' '
+choke_git_rm_setup() {
 	git reset -q --hard &&
 	test_when_finished "rm -f .git/index.lock && git reset -q --hard" &&
 	i=0 &&
@@ -249,9 +252,21 @@ test_expect_success 'choking "git rm" should not let it die with cruft' '
 	do
 		echo "100644 $hash 0	some-file-$i"
 		i=$(( $i + 1 ))
-	done | git update-index --index-info &&
+	done | git update-index --index-info
+}
+
+test_expect_success 'choking "git rm" should not let it die with cruft (induce SIGPIPE)' '
+	choke_git_rm_setup &&
 	# git command is intentionally placed upstream of pipe to induce SIGPIPE
 	git rm -n "some-file-*" | : &&
+	test_path_is_missing .git/index.lock
+'
+
+
+test_expect_success !MINGW 'choking "git rm" should not let it die with cruft (induce and check SIGPIPE)' '
+	choke_git_rm_setup &&
+	OUT=$( ((trap "" PIPE; git rm -n "some-file-*"; echo $? 1>&3) | :) 3>&1 ) &&
+	test_match_signal 13 "$OUT" &&
 	test_path_is_missing .git/index.lock
 '
 
@@ -483,16 +498,16 @@ test_expect_success 'setup submodule conflict' '
 	echo 1 >nitfol &&
 	git add nitfol &&
 	git commit -m "added nitfol 1" &&
-	git checkout -b branch2 master &&
+	git checkout -b branch2 main &&
 	echo 2 >nitfol &&
 	git add nitfol &&
 	git commit -m "added nitfol 2" &&
-	git checkout -b conflict1 master &&
+	git checkout -b conflict1 main &&
 	git -C submod fetch &&
 	git -C submod checkout branch1 &&
 	git add submod &&
 	git commit -m "submod 1" &&
-	git checkout -b conflict2 master &&
+	git checkout -b conflict2 main &&
 	git -C submod checkout branch2 &&
 	git add submod &&
 	git commit -m "submod 2"
@@ -604,7 +619,7 @@ test_expect_success 'rm of a conflicted unpopulated submodule succeeds' '
 '
 
 test_expect_success 'rm of a populated submodule with a .git directory migrates git dir' '
-	git checkout -f master &&
+	git checkout -f main &&
 	git reset --hard &&
 	git submodule update &&
 	(
@@ -717,7 +732,7 @@ test_expect_success 'checking out a commit after submodule removal needs manual 
 	git checkout HEAD^ &&
 	git submodule update &&
 	git checkout -q HEAD^ &&
-	git checkout -q master 2>actual &&
+	git checkout -q main 2>actual &&
 	test_i18ngrep "^warning: unable to rmdir '\''submod'\'':" actual &&
 	git status -s submod >actual &&
 	echo "?? submod/" >expected &&
@@ -890,6 +905,53 @@ test_expect_success 'rm files with two different errors' '
 
 test_expect_success 'rm empty string should fail' '
 	test_must_fail git rm -rf ""
+'
+
+test_expect_success 'rm should respect --[no]-restrict-to-sparse-paths' '
+	git init sparse-repo &&
+	(
+		cd sparse-repo &&
+		touch a b c &&
+		git add -A &&
+		git commit -m files &&
+		git sparse-checkout set "/a" &&
+
+		# By default, it should not rm paths outside the sparse-checkout
+		test_must_fail git rm b 2>stderr &&
+		test_i18ngrep "fatal: pathspec .b. did not match any files" stderr &&
+		test_i18ngrep "disable sparse.restrictCmds if you intend to edit outside" stderr &&
+
+		# But it should rm them with --no-restrict-to-sparse-paths
+		git --no-restrict-to-sparse-paths rm b &&
+
+		# And also with sparse.restrictCmds=false
+		git reset &&
+		git -c sparse.restrictCmds=false rm b
+	)
+'
+
+test_expect_success 'recursive rm should respect --[no]-restrict-to-sparse-paths' '
+	git init sparse-repo-2 &&
+	(
+		cd sparse-repo-2 &&
+		mkdir -p sub/dir &&
+		touch sub/f1 sub/dir/f2 &&
+		git add -A &&
+		git commit -m files &&
+		git sparse-checkout set "sub/dir" &&
+
+		git rm -r sub &&
+		echo "D  sub/dir/f2" >expected &&
+		git status --porcelain -uno >actual &&
+		test_cmp expected actual &&
+
+		git reset &&
+		git --no-restrict-to-sparse-paths rm -r sub &&
+		echo "D  sub/dir/f2" >expected-no-restrict &&
+		echo "D  sub/f1"     >>expected-no-restrict &&
+		git status --porcelain -uno >actual-no-restrict &&
+		test_cmp expected-no-restrict actual-no-restrict
+	)
 '
 
 test_done

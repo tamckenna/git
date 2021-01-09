@@ -41,6 +41,12 @@ struct fsck_options {
 	int *msg_type;
 	struct oidset skiplist;
 	kh_oid_map_t *object_names;
+
+	/*
+	 * If 1, print the hashes of missing .gitmodules blobs instead of
+	 * considering them to be errors.
+	 */
+	unsigned print_dangling_gitmodules:1;
 };
 
 #define FSCK_OPTIONS_DEFAULT { NULL, fsck_error_function, 0, NULL, OIDSET_INIT }
@@ -61,6 +67,17 @@ int fsck_walk(struct object *obj, void *data, struct fsck_options *options);
  */
 int fsck_object(struct object *obj, void *data, unsigned long size,
 	struct fsck_options *options);
+
+void register_found_gitmodules(const struct object_id *oid);
+
+/*
+ * fsck a tag, and pass info about it back to the caller. This is
+ * exposed fsck_object() internals for git-mktag(1).
+ */
+int fsck_tag_standalone(const struct object_id *oid, const char *buffer,
+			unsigned long size, struct fsck_options *options,
+			struct object_id *tagged_oid,
+			int *tag_type);
 
 /*
  * Some fsck checks are context-dependent, and may end up queued; run this
@@ -93,5 +110,12 @@ void fsck_put_object_name(struct fsck_options *options,
 			  const char *fmt, ...);
 const char *fsck_describe_object(struct fsck_options *options,
 				 const struct object_id *oid);
+
+/*
+ * git_config() callback for use by fsck-y tools that want to support
+ * fsck.<msg> fsck.skipList etc.
+ */
+int fsck_config_internal(const char *var, const char *value, void *cb,
+			 struct fsck_options *options);
 
 #endif

@@ -263,6 +263,8 @@ void load_command_list(const char *prefix,
 	const char *env_path = getenv("PATH");
 	const char *exec_path = git_exec_path();
 
+	load_builtin_commands(prefix, main_cmds);
+
 	if (exec_path) {
 		list_commands_in_dir(main_cmds, exec_path, prefix);
 		QSORT(main_cmds->names, main_cmds->cnt, cmdname_compare);
@@ -375,7 +377,7 @@ void list_cmds_by_config(struct string_list *list)
 {
 	const char *cmd_list;
 
-	if (git_config_get_string_const("completion.commands", &cmd_list))
+	if (git_config_get_string_tmp("completion.commands", &cmd_list))
 		return;
 
 	string_list_sort(list);
@@ -470,12 +472,26 @@ int is_in_cmdlist(struct cmdnames *c, const char *s)
 static int autocorrect;
 static struct cmdnames aliases;
 
+#define AUTOCORRECT_NEVER (-2)
+#define AUTOCORRECT_IMMEDIATELY (-1)
+
 static int git_unknown_cmd_config(const char *var, const char *value, void *cb)
 {
 	const char *p;
 
-	if (!strcmp(var, "help.autocorrect"))
-		autocorrect = git_config_int(var,value);
+	if (!strcmp(var, "help.autocorrect")) {
+		if (!value)
+			return config_error_nonbool(var);
+		if (!strcmp(value, "never")) {
+			autocorrect = AUTOCORRECT_NEVER;
+		} else if (!strcmp(value, "immediate")) {
+			autocorrect = AUTOCORRECT_IMMEDIATELY;
+		} else {
+			int v = git_config_int(var, value);
+			autocorrect = (v < 0)
+				? AUTOCORRECT_IMMEDIATELY : v;
+		}
+	}
 	/* Also use aliases for command lookup */
 	if (skip_prefix(var, "alias.", &p))
 		add_cmdname(&aliases, p, strlen(p));
@@ -522,6 +538,11 @@ const char *help_unknown_cmd(const char *cmd)
 	memset(&aliases, 0, sizeof(aliases));
 
 	read_early_config(git_unknown_cmd_config, NULL);
+
+	if (autocorrect == AUTOCORRECT_NEVER) {
+		fprintf_ln(stderr, _("git: '%s' is not a git command. See 'git --help'."), cmd);
+		exit(1);
+	}
 
 	load_command_list("git-", &main_cmds, &other_cmds);
 
@@ -592,7 +613,7 @@ const char *help_unknown_cmd(const char *cmd)
 			   _("WARNING: You called a Git command named '%s', "
 			     "which does not exist."),
 			   cmd);
-		if (autocorrect < 0)
+		if (autocorrect == AUTOCORRECT_IMMEDIATELY)
 			fprintf_ln(stderr,
 				   _("Continuing under the assumption that "
 				     "you meant '%s'."),
@@ -719,4 +740,38 @@ NORETURN void help_unknown_ref(const char *ref, const char *cmd,
 
 	string_list_clear(&suggested_refs, 0);
 	exit(1);
+}
+
+static struct cmdname_help *find_cmdname_help(const char *name)
+{
+	int i;
+
+	for (i = 0; i < ARRAY_SIZE(command_list); i++) {
+		if (!strcmp(command_list[i].name, name))
+			return &command_list[i];
+	}
+	return NULL;
+}
+
+void warn_on_dashed_git(const char *cmd)
+{
+	struct cmdname_help *cmdname;
+	static const char *still_in_use_var = "GIT_I_STILL_USE_DASHED_GIT";
+	static const char *still_in_use_msg =
+		N_("Use of '%s' in the dashed-form is nominated for removal.\n"
+		   "If you still use it, export '%s=true'\n"
+		   "and send an e-mail to <git@vger.kernel.org>\n"
+		   "to let us know and stop our removal plan.  Thanks.\n");
+
+	if (!cmd)
+		return; /* git-help is OK */
+
+	cmdname = find_cmdname_help(cmd);
+	if (cmdname && (cmdname->category & CAT_onpath))
+		return; /* git-upload-pack and friends are OK */
+
+	if (!git_env_bool(still_in_use_var, 0)) {
+		fprintf(stderr, _(still_in_use_msg), cmd, still_in_use_var);
+		exit(1);
+	}
 }

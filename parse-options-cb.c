@@ -105,6 +105,8 @@ int parse_opt_commit(const struct option *opt, const char *arg, int unset)
 	struct commit *commit;
 	struct commit **target = opt->value;
 
+	BUG_ON_OPT_NEG(unset);
+
 	if (!arg)
 		return -1;
 	if (get_oid(arg, &oid))
@@ -202,6 +204,22 @@ int parse_opt_string_list(const struct option *opt, const char *arg, int unset)
 		return -1;
 
 	string_list_append(v, arg);
+	return 0;
+}
+
+int parse_opt_strvec(const struct option *opt, const char *arg, int unset)
+{
+	struct strvec *v = opt->value;
+
+	if (unset) {
+		strvec_clear(v);
+		return 0;
+	}
+
+	if (!arg)
+		return -1;
+
+	strvec_push(v, arg);
 	return 0;
 }
 

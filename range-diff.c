@@ -232,10 +232,8 @@ static int patch_util_cmp(const void *dummy, const struct patch_util *a,
 
 static void find_exact_matches(struct string_list *a, struct string_list *b)
 {
-	struct hashmap map;
+	struct hashmap map = HASHMAP_INIT((hashmap_cmp_fn)patch_util_cmp, NULL);
 	int i;
-
-	hashmap_init(&map, (hashmap_cmp_fn)patch_util_cmp, NULL, 0);
 
 	/* First, add the patches of a to a hash map */
 	for (i = 0; i < a->nr; i++) {
@@ -266,7 +264,7 @@ static void find_exact_matches(struct string_list *a, struct string_list *b)
 		}
 	}
 
-	hashmap_free(&map);
+	hashmap_clear(&map);
 }
 
 static void diffsize_consume(void *data, char *line, unsigned long len)
@@ -565,4 +563,21 @@ int show_range_diff(const char *range1, const char *range2,
 	string_list_clear(&branch2, 1);
 
 	return res;
+}
+
+int is_range_diff_range(const char *arg)
+{
+	static regex_t *regex;
+
+	if (strstr(arg, ".."))
+		return 1;
+
+	/* match `<rev>^!` and `<rev>^-<n>` */
+	if (!regex) {
+		regex = xmalloc(sizeof(*regex));
+		if (regcomp(regex, "\\^(!|-[0-9]*)$", REG_EXTENDED) < 0)
+			BUG("could not compile range-diff regex");
+	}
+
+	return !regexec(regex, arg, 0, NULL, 0);
 }

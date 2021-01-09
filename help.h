@@ -32,6 +32,7 @@ const char *help_unknown_cmd(const char *cmd);
 void load_command_list(const char *prefix,
 		       struct cmdnames *main_cmds,
 		       struct cmdnames *other_cmds);
+void load_builtin_commands(const char *prefix, struct cmdnames *cmds);
 void add_cmdname(struct cmdnames *cmds, const char *name, int len);
 /* Here we require that excludes is a sorted list. */
 void exclude_cmds(struct cmdnames *cmds, struct cmdnames *excludes);
@@ -44,6 +45,9 @@ void get_version_info(struct strbuf *buf, int show_build_options);
  * ref to the command, to give suggested "correct" refs.
  */
 NORETURN void help_unknown_ref(const char *ref, const char *cmd, const char *error);
+
+/* When the cmd_main() sees "git-foo", check if the user intended */
+void warn_on_dashed_git(const char *);
 
 static inline void list_config_item(struct string_list *list,
 				    const char *prefix,

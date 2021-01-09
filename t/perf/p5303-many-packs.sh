@@ -24,11 +24,14 @@ repack_into_n () {
 	sed -n '1~5p' |
 	head -n "$1" |
 	perl -e 'print reverse <>' \
-	>pushes
+	>pushes &&
 
 	# create base packfile
-	head -n 1 pushes |
-	git pack-objects --delta-base-offset --revs staging/pack
+	base_pack=$(
+		head -n 1 pushes |
+		git pack-objects --delta-base-offset --revs staging/pack
+	) &&
+	test_export base_pack &&
 
 	# and then incrementals between each pair of commits
 	last= &&
@@ -73,6 +76,10 @@ do
 		git rev-list --objects --all >/dev/null
 	'
 
+	test_perf "abbrev-commit ($nr_packs)" '
+		git rev-list --abbrev-commit HEAD >/dev/null
+	'
+
 	# This simulates the interesting part of the repack, which is the
 	# actual pack generation, without smudging the on-disk setup
 	# between trials.
@@ -80,6 +87,15 @@ do
 		GIT_TEST_FULL_IN_PACK_ARRAY=1 \
 		git pack-objects --keep-true-parents \
 		  --honor-pack-keep --non-empty --all \
+		  --reflog --indexed-objects --delta-base-offset \
+		  --stdout </dev/null >/dev/null
+	'
+
+	test_perf "repack with keep ($nr_packs)" '
+		git pack-objects --keep-true-parents \
+		  --honor-pack-keep --assume-kept-packs-closed \
+		  --keep-pack=pack-$base_pack.pack \
+		  --non-empty --all \
 		  --reflog --indexed-objects --delta-base-offset \
 		  --stdout </dev/null >/dev/null
 	'

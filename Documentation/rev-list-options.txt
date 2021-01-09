@@ -130,6 +130,11 @@ parents) and `--max-parents=-1` (negative numbers denote no upper limit).
 	this option allows you to ignore the individual commits
 	brought in to your history by such a merge.
 
+ifdef::git-log[]
+	This option also changes default diff format for merge commits
+	to `first-parent`, see `--diff-merges=first-parent` for details.
+endif::git-log[]
+
 --not::
 	Reverses the meaning of the '{caret}' prefix (or lack thereof)
 	for all following revision specifiers, up to the next `--not`.
@@ -855,6 +860,13 @@ ifdef::git-rev-list[]
 --unpacked::
 	Only useful with `--objects`; print the object IDs that are not
 	in packs.
+
+--no-kept-objects[=<kind>]::
+	Halts the traversal as soon as an object in a kept pack is
+	found. If `<kind>` is `on-disk`, only packs with a corresponding
+	`*.keep` file are ignored. If `<kind>` is `in-core`, only packs
+	with their in-core kept state set are ignored. Otherwise, both
+	kinds of kept packs are ignored.
 
 --object-names::
 	Only useful with `--objects`; print the names of the object IDs
