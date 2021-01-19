@@ -78,6 +78,7 @@ static int have_non_local_packs;
 static int incremental;
 static int ignore_packed_keep_on_disk;
 static int ignore_packed_keep_in_core;
+static int assume_kept_packs_closed;
 static int allow_ofs_delta;
 static struct pack_idx_option pack_idx_opts;
 static const char *base_name;
@@ -3542,6 +3543,8 @@ int cmd_pack_objects(int argc, const char **argv, const char *prefix)
 			 N_("create packs suitable for shallow fetches")),
 		OPT_BOOL(0, "honor-pack-keep", &ignore_packed_keep_on_disk,
 			 N_("ignore packs that have companion .keep file")),
+		OPT_BOOL(0, "assume-kept-packs-closed", &assume_kept_packs_closed,
+			 N_("assume the union of kept packs is closed under reachability")),
 		OPT_STRING_LIST(0, "keep-pack", &keep_pack_list, N_("name"),
 				N_("ignore this pack")),
 		OPT_INTEGER(0, "compression", &pack_compression_level,
@@ -3631,6 +3634,8 @@ int cmd_pack_objects(int argc, const char **argv, const char *prefix)
 		use_internal_rev_list = 1;
 		strvec_push(&rp, "--unpacked");
 	}
+	if (assume_kept_packs_closed)
+		use_internal_rev_list = 1;
 
 	if (exclude_promisor_objects) {
 		use_internal_rev_list = 1;
@@ -3710,6 +3715,14 @@ int cmd_pack_objects(int argc, const char **argv, const char *prefix)
 				break;
 		if (!p) /* no keep-able packs found */
 			ignore_packed_keep_on_disk = 0;
+	}
+	if (assume_kept_packs_closed) {
+		if (ignore_packed_keep_on_disk && ignore_packed_keep_in_core)
+			strvec_push(&rp, "--no-kept-objects");
+		else if (ignore_packed_keep_on_disk)
+			strvec_push(&rp, "--no-kept-objects=on-disk");
+		else if (ignore_packed_keep_in_core)
+			strvec_push(&rp, "--no-kept-objects=in-core");
 	}
 	if (local) {
 		/*

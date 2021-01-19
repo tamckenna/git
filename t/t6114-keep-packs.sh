@@ -66,4 +66,63 @@ test_expect_success '--no-kept-objects excludes kept non-MIDX object' '
 	test_cmp expect actual
 '
 
+test_expect_success '--no-kept-objects can respect only in-core keep packs' '
+	test_when_finished "rm -fr actual-*.idx actual-*.pack" &&
+	(
+		git rev-list --objects --no-object-names packed..kept &&
+		git rev-list --objects --no-object-names loose
+	) | sort >expect &&
+
+	git pack-objects \
+	  --assume-kept-packs-closed \
+	  --keep-pack=pack-$MISC_PACK.pack \
+	  --all actual </dev/null &&
+	idx_objects actual-*.idx >actual &&
+
+	test_cmp expect actual
+'
+
+test_expect_success 'setup additional --no-kept-objects tests' '
+	test_commit additional &&
+
+	ADDITIONAL_PACK=$(git pack-objects --revs .git/objects/pack/pack <<-EOF
+	refs/tags/additional
+	^refs/tags/kept
+	EOF
+	)
+'
+
+test_expect_success '--no-kept-objects can respect only on-disk keep packs' '
+	test_when_finished "rm -fr actual-*.idx actual-*.pack" &&
+	(
+		git rev-list --objects --no-object-names kept..additional &&
+		git rev-list --objects --no-object-names packed
+	) | sort >expect &&
+
+	git pack-objects \
+	  --assume-kept-packs-closed \
+	  --honor-pack-keep \
+	  --all actual </dev/null &&
+	idx_objects actual-*.idx >actual &&
+
+	test_cmp expect actual
+'
+
+test_expect_success '--no-kept-objects can respect mixed kept packs' '
+	test_when_finished "rm -fr actual-*.idx actual-*.pack" &&
+	(
+		git rev-list --objects --no-object-names kept..additional &&
+		git rev-list --objects --no-object-names loose
+	) | sort >expect &&
+
+	git pack-objects \
+	  --assume-kept-packs-closed \
+	  --honor-pack-keep \
+	  --keep-pack=pack-$MISC_PACK.pack \
+	  --all actual </dev/null &&
+	idx_objects actual-*.idx >actual &&
+
+	test_cmp expect actual
+'
+
 test_done
