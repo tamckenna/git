@@ -3343,7 +3343,7 @@ static void record_recent_commit(struct commit *commit, void *data)
 	oid_array_append(&recent_objects, &commit->object.oid);
 }
 
-static void get_object_list(int ac, const char **av)
+static void get_object_list(int ac, const char **av, int read_from_stdin)
 {
 	struct rev_info revs;
 	struct setup_revision_opt s_r_opt = {
@@ -3363,7 +3363,7 @@ static void get_object_list(int ac, const char **av)
 	save_warning = warn_on_object_refname_ambiguity;
 	warn_on_object_refname_ambiguity = 0;
 
-	while (fgets(line, sizeof(line), stdin) != NULL) {
+	while (read_from_stdin && fgets(line, sizeof(line), stdin) != NULL) {
 		int len = strlen(line);
 		if (len && line[len - 1] == '\n')
 			line[--len] = 0;
@@ -3487,6 +3487,15 @@ static int option_parse_unpack_unreachable(const struct option *opt,
 	return 0;
 }
 
+static void collect_kept_packs(struct string_list *keep_pack_list)
+{
+	struct strbuf buf = STRBUF_INIT;
+	while (strbuf_getline(&buf, stdin) != EOF)
+		string_list_append(keep_pack_list,
+				   strbuf_detach(&buf, NULL));
+	strbuf_release(&buf);
+}
+
 int cmd_pack_objects(int argc, const char **argv, const char *prefix)
 {
 	int use_internal_rev_list = 0;
@@ -3496,6 +3505,7 @@ int cmd_pack_objects(int argc, const char **argv, const char *prefix)
 	int rev_list_unpacked = 0, rev_list_all = 0, rev_list_reflog = 0;
 	int rev_list_index = 0;
 	struct string_list keep_pack_list = STRING_LIST_INIT_NODUP;
+	int keep_pack_stdin = 0;
 	struct option pack_objects_options[] = {
 		OPT_SET_INT('q', "quiet", &progress,
 			    N_("do not show progress meter"), 0),
@@ -3568,6 +3578,8 @@ int cmd_pack_objects(int argc, const char **argv, const char *prefix)
 			 N_("assume the union of kept packs is closed under reachability")),
 		OPT_STRING_LIST(0, "keep-pack", &keep_pack_list, N_("name"),
 				N_("ignore this pack")),
+		OPT_BOOL(0, "keep-pack-stdin", &keep_pack_stdin,
+			 N_("read the list of kept packs from stdin")),
 		OPT_INTEGER(0, "compression", &pack_compression_level,
 			    N_("pack compression level")),
 		OPT_SET_INT(0, "keep-true-parents", &grafts_replace_parents,
@@ -3728,6 +3740,11 @@ int cmd_pack_objects(int argc, const char **argv, const char *prefix)
 	if (progress && all_progress_implied)
 		progress = 2;
 
+	if (keep_pack_stdin) {
+		if (!use_internal_rev_list)
+			die(_("--keep-pack-stdin requires --revs"));
+		collect_kept_packs(&keep_pack_list);
+	}
 	add_extra_kept_packs(&keep_pack_list);
 	if (ignore_packed_keep_on_disk) {
 		struct packed_git *p;
@@ -3769,7 +3786,7 @@ int cmd_pack_objects(int argc, const char **argv, const char *prefix)
 	if (!use_internal_rev_list)
 		read_object_list_from_stdin();
 	else {
-		get_object_list(rp.nr, rp.v);
+		get_object_list(rp.nr, rp.v, !keep_pack_stdin);
 		strvec_clear(&rp);
 	}
 	cleanup_preferred_base();

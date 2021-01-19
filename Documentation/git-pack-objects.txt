@@ -135,6 +135,14 @@ depth is 4095.
 	leading directory (e.g. `pack-123.pack`). The option could be
 	specified multiple times to keep multiple packs.
 
+--keep-pack-stdin::
+	Take a list of line-delimited `<pack-name>` arguments, treating
+	them as if they were each passed as `--keep-pack=<pack-name>`.
+	Useful for when many packs are being kept to avoid argument
+	length limitations. Requires that `--revs` be passed or implied,
+	but does not allow the caller to pass additional traversal
+	arguments over standard input.
+
 --assume-kept-packs-closed::
 	This flag causes `git rev-list` to halt the object traversal
 	when it encounters an object found in a kept pack. This is
