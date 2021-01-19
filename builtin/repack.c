@@ -298,6 +298,27 @@ static void repack_promisor_objects(const struct pack_objects_args *args,
 #define ALL_INTO_ONE 1
 #define LOOSEN_UNREACHABLE 2
 
+static void handle_loose_and_reachable(struct child_process *cmd,
+				       const char *unpack_unreachable,
+				       int pack_everything,
+				       int keep_unreachable)
+{
+	if (unpack_unreachable) {
+		strvec_pushf(&cmd->args,
+			     "--unpack-unreachable=%s",
+			     unpack_unreachable);
+		strvec_push(&cmd->env_array, "GIT_REF_PARANOIA=1");
+	} else if (pack_everything & LOOSEN_UNREACHABLE) {
+		strvec_push(&cmd->args,
+			    "--unpack-unreachable");
+	} else if (keep_unreachable) {
+		strvec_push(&cmd->args, "--keep-unreachable");
+		strvec_push(&cmd->args, "--pack-loose-unreachable");
+	} else {
+		strvec_push(&cmd->env_array, "GIT_REF_PARANOIA=1");
+	}
+}
+
 int cmd_repack(int argc, const char **argv, const char *prefix)
 {
 	struct child_process cmd = CHILD_PROCESS_INIT;
@@ -414,22 +435,10 @@ int cmd_repack(int argc, const char **argv, const char *prefix)
 
 		repack_promisor_objects(&po_args, &names);
 
-		if (existing_packs.nr && delete_redundant) {
-			if (unpack_unreachable) {
-				strvec_pushf(&cmd.args,
-					     "--unpack-unreachable=%s",
-					     unpack_unreachable);
-				strvec_push(&cmd.env_array, "GIT_REF_PARANOIA=1");
-			} else if (pack_everything & LOOSEN_UNREACHABLE) {
-				strvec_push(&cmd.args,
-					    "--unpack-unreachable");
-			} else if (keep_unreachable) {
-				strvec_push(&cmd.args, "--keep-unreachable");
-				strvec_push(&cmd.args, "--pack-loose-unreachable");
-			} else {
-				strvec_push(&cmd.env_array, "GIT_REF_PARANOIA=1");
-			}
-		}
+		if (existing_packs.nr && delete_redundant)
+			handle_loose_and_reachable(&cmd, unpack_unreachable,
+						   pack_everything,
+						   keep_unreachable);
 	} else {
 		strvec_push(&cmd.args, "--unpacked");
 		strvec_push(&cmd.args, "--incremental");
