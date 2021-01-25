@@ -94,4 +94,49 @@ test_expect_success 'reverse index is not generated when available on disk' '
 		--batch-check="%(objectsize:disk)" <tip
 '
 
+revindex_tests () {
+	on_disk="$1"
+
+	test_expect_success "setup revindex tests (on_disk=$on_disk)" "
+		test_oid_cache <<-EOF &&
+		disklen sha1:47
+		disklen sha256:59
+		EOF
+
+		git init repo &&
+		(
+			cd repo &&
+
+			if test ztrue = \"z$on_disk\"
+			then
+				git config pack.writeReverseIndex true
+			fi &&
+
+			test_commit commit &&
+			git repack -ad
+		)
+
+	"
+
+	test_expect_success "check objectsize:disk (on_disk=$on_disk)" '
+		(
+			cd repo &&
+			git rev-parse HEAD^{tree} >tree &&
+			git cat-file --batch-check="%(objectsize:disk)" <tree >actual &&
+
+			git cat-file -p HEAD^{tree} &&
+
+			printf "%s\n" "$(test_oid disklen)" >expect &&
+			test_cmp expect actual
+		)
+	'
+
+	test_expect_success "cleanup revindex tests (on_disk=$on_disk)" '
+		rm -fr repo
+	'
+}
+
+revindex_tests "true"
+revindex_tests "false"
+
 test_done
