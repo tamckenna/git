@@ -847,8 +847,9 @@ test_expect_success 'part of packfile response provided as URI' '
 	test -f hfound &&
 	test -f h2found &&
 
-	# Ensure that there are exactly 6 files (3 .pack and 3 .idx).
-	ls http_child/.git/objects/pack/* >filelist &&
+	# Ensure that there are exactly 3 packfiles with associated .idx
+	ls http_child/.git/objects/pack/*.pack \
+	    http_child/.git/objects/pack/*.idx >filelist &&
 	test_line_count = 6 filelist
 '
 
@@ -901,8 +902,9 @@ test_expect_success 'packfile-uri with transfer.fsckobjects' '
 		-c fetch.uriprotocols=http,https \
 		clone "$HTTPD_URL/smart/http_parent" http_child &&
 
-	# Ensure that there are exactly 4 files (2 .pack and 2 .idx).
-	ls http_child/.git/objects/pack/* >filelist &&
+	# Ensure that there are exactly 2 packfiles with associated .idx
+	ls http_child/.git/objects/pack/*.pack \
+	    http_child/.git/objects/pack/*.idx >filelist &&
 	test_line_count = 4 filelist
 '
 
@@ -956,8 +958,9 @@ test_expect_success 'packfile-uri with transfer.fsckobjects succeeds when .gitmo
 		-c fetch.uriprotocols=http,https \
 		clone "$HTTPD_URL/smart/http_parent" http_child &&
 
-	# Ensure that there are exactly 4 files (2 .pack and 2 .idx).
-	ls http_child/.git/objects/pack/* >filelist &&
+	# Ensure that there are exactly 2 packfiles with associated .idx
+	ls http_child/.git/objects/pack/*.pack \
+	    http_child/.git/objects/pack/*.idx >filelist &&
 	test_line_count = 4 filelist
 '
 
