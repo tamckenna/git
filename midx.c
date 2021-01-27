@@ -913,7 +913,7 @@ static int write_midx_internal(const char *object_dir, struct multi_pack_index *
 	add_chunk(cf, MIDX_CHUNKID_OIDFANOUT,
 		  write_midx_oid_fanout, MIDX_CHUNK_FANOUT_SIZE);
 	add_chunk(cf, MIDX_CHUNKID_OIDLOOKUP,
-		  write_midx_oid_lookup, ctx.entries_nr * the_hash_algo->rawsz);
+		  write_midx_oid_lookup, (uint64_t)ctx.entries_nr * the_hash_algo->rawsz);
 	add_chunk(cf, MIDX_CHUNKID_OBJECTOFFSETS,
 		  write_midx_object_offsets,
 		  ctx.entries_nr * MIDX_CHUNK_OFFSET_WIDTH);
@@ -921,7 +921,7 @@ static int write_midx_internal(const char *object_dir, struct multi_pack_index *
 	if (ctx.large_offsets_needed)
 		add_chunk(cf, MIDX_CHUNKID_LARGEOFFSETS,
 			write_midx_large_offsets,
-			ctx.num_large_offsets * MIDX_CHUNK_LARGE_OFFSET_WIDTH);
+			(uint64_t)ctx.num_large_offsets * MIDX_CHUNK_LARGE_OFFSET_WIDTH);
 
 	write_midx_header(f, get_num_chunks(cf), ctx.nr - dropped_packs);
 	write_chunkfile(cf, &ctx);
