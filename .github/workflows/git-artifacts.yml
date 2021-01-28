@@ -25,7 +25,21 @@ jobs:
   bundle-artifacts:
     runs-on: windows-latest
     steps:
+      - name: Set latest build ID
+        run: |
+          urlbase=https://dev.azure.com/git-for-windows/git/_apis/build/builds
+          id=$(curl "$urlbase?definitions=29&statusFilter=completed&resultFilter=succeeded&\$top=1" | json_pp |
+            sed -n 's/^         "id" : \([1-9][0-9]*\).*/\1/p')
+          echo "Latest ID is ${id}"
+          echo "LATEST_BUILD_ID=${id}" >> $GITHUB_ENV
+      - name: Cache git-sdk-64-build-installers
+        id: cache-sdk-build-installers
+        uses: actions/cache@v2
+        with:
+          path: git-sdk-64-build-installers
+          key: ${{ env.LATEST_BUILD_ID }}
       - name: Download git-sdk-64-build-installers
+        if: steps.cache-sdk-build-installers.cache-hit != 'true'
         shell: bash
         run: |
           # Use Git Bash to download and unpack the artifact
@@ -77,10 +91,10 @@ jobs:
             echo \"`${tag_name#v}\" >bundle-artifacts/display_version &&
             echo \"`$tag_name\" >bundle-artifacts/next_version &&
             git tag `$(test -z \"`$GPGKEY\" || echo \" -s\") -m \"Snapshot build\" \"`$tag_name\" FETCH_HEAD &&
-            git bundle create bundle-artifacts/git.bundle origin/master..\"`$tag_name\" &&
+            git bundle create bundle-artifacts/git.bundle origin/main..\"`$tag_name\" &&
 
             sh -x /usr/src/build-extra/please.sh mention feature \"Snapshot of `$(git show -s  --pretty='tformat:%h (%s, %ad)' --date=short FETCH_HEAD)\" &&
-            git -C /usr/src/build-extra bundle create \"`$PWD/bundle-artifacts/build-extra.bundle\" origin/master..master
+            git -C /usr/src/build-extra bundle create \"`$PWD/bundle-artifacts/build-extra.bundle\" origin/main..main
           "@
       - name: Clean up temporary files
         if: always()
@@ -115,8 +129,8 @@ jobs:
       - name: Check out build-extra/git and git/git
         run: |
           .\git-sdk-64-makepkg-git\usr\bin\bash.exe -lc @"
-            git clone --depth=10 --single-branch -b master https://github.com/git-for-windows/build-extra /usr/src/build-extra &&
-            git -C /usr/src/build-extra pull \"`$PWD\"/bundle-artifacts/build-extra.bundle master &&
+            git clone --depth=10 --single-branch -b main https://github.com/git-for-windows/build-extra /usr/src/build-extra &&
+            git -C /usr/src/build-extra pull \"`$PWD\"/bundle-artifacts/build-extra.bundle main &&
 
             set -x &&
             git init &&
@@ -167,7 +181,7 @@ jobs:
             (cd /usr/src/MINGW-packages/mingw-w64-git &&
             cp PKGBUILD.`$version PKGBUILD &&
             git commit -s -m \"mingw-w64-git: new version (`$version)\" PKGBUILD &&
-            git bundle create \"`$b\"/MINGW-packages.bundle origin/master..master)
+            git bundle create \"`$b\"/MINGW-packages.bundle origin/main..main)
           "@
       - name: Clean up temporary files
         if: always()
@@ -230,7 +244,7 @@ jobs:
         run: a=git-sdk-${{matrix.arch.bitness}}-build-installers && mkdir -p $a && curl -# https://wingit.blob.core.windows.net/ci-artifacts/$a.tar.xz | tar -C $a -xJf -
       - name: Clone build-extra
         if: env.SKIP != 'true'
-        run: git clone --single-branch -b master https://github.com/git-for-windows/build-extra git-sdk-${{matrix.arch.bitness}}-build-installers\usr\src\build-extra
+        run: git clone --single-branch -b main https://github.com/git-for-windows/build-extra git-sdk-${{matrix.arch.bitness}}-build-installers\usr\src\build-extra
       - name: Prepare home directory for code-signing
         env:
           CODESIGN_P12: ${{secrets.CODESIGN_P12}}
@@ -307,7 +321,7 @@ jobs:
         run: a=git-sdk-64-build-installers && mkdir -p $a && curl -# https://wingit.blob.core.windows.net/ci-artifacts/$a.tar.xz | tar -C $a -xJf -
       - name: Clone build-extra
         if: env.SKIP != 'true'
-        run: git clone --single-branch -b master https://github.com/git-for-windows/build-extra git-sdk-64-build-installers\usr\src\build-extra
+        run: git clone --single-branch -b main https://github.com/git-for-windows/build-extra git-sdk-64-build-installers\usr\src\build-extra
       - uses: nuget/setup-nuget@v1
         if: env.SKIP != 'true'
       - name: Build 64-bit NuGet packages
@@ -317,7 +331,7 @@ jobs:
           & .\git-sdk-64-build-installers\usr\bin\bash.exe -lc @"
             set -x
             # Update the release notes
-            git -C /usr/src/build-extra pull \"`$PWD\"/bundle-artifacts/build-extra.bundle master &&
+            git -C /usr/src/build-extra pull \"`$PWD\"/bundle-artifacts/build-extra.bundle main &&
             /usr/src/build-extra/please.sh make_installers_from_mingw_w64_git --version=`$(cat pkg-x86_64/ver) -o artifacts --nuget --pkg=pkg-x86_64/mingw-w64-x86_64-git-[0-9]*.tar.xz --pkg=pkg-x86_64/mingw-w64-x86_64-git-doc-html-[0-9]*.tar.xz &&
             /usr/src/build-extra/please.sh make_installers_from_mingw_w64_git --version=`$(cat pkg-x86_64/ver) -o artifacts --nuget-mingit &&
             openssl dgst -sha256 artifacts/Git*.nupkg | sed \"s/.* //\" >artifacts/sha-256.txt
