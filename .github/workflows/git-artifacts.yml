@@ -24,6 +24,8 @@ env:
 jobs:
   bundle-artifacts:
     runs-on: windows-latest
+    outputs:
+      latest-sdk64-extra-build-id: ${{ steps.determine-latest-sdk64-extra-build-id.outputs.id }}
     steps:
       - name: Configure user
         shell: bash
@@ -34,15 +36,31 @@ jobs:
           git config --global user.name "$USER_NAME" &&
           git config --global user.email "$USER_EMAIL" &&
           echo "PACKAGER=$USER_NAME <$USER_EMAIL>" >>$GITHUB_ENV
+      - name: Determine latest git-sdk-64-extra-artifacts build ID
+        id: determine-latest-sdk64-extra-build-id
+        shell: bash
+        run: |
+          urlbase=https://dev.azure.com/git-for-windows/git/_apis/build/builds
+          id=$(curl "$urlbase?definitions=29&statusFilter=completed&resultFilter=succeeded&\$top=1" |
+            jq -r '.value[0].id')
+
+          echo "Latest ID is ${id}"
+          echo "::set-output name=id::$id"
+      - name: Cache git-sdk-64-build-installers
+        id: cache-sdk-build-installers
+        uses: actions/cache@v2
+        with:
+          path: git-sdk-64-build-installers
+          key: build-installers-64-${{ steps.determine-latest-sdk64-extra-build-id.outputs.id }}
       - name: Download git-sdk-64-build-installers
+        if: steps.cache-sdk-build-installers.outputs.cache-hit != 'true'
         shell: bash
         run: |
           # Use Git Bash to download and unpack the artifact
 
           ## Get artifact
           urlbase=https://dev.azure.com/git-for-windows/git/_apis/build/builds
-          id=$(curl "$urlbase?definitions=29&statusFilter=completed&resultFilter=succeeded&\$top=1" |
-            jq -r '.value[0].id')
+          id=${{ steps.determine-latest-sdk64-extra-build-id.outputs.id }}
           download_url=$(curl "$urlbase/$id/artifacts" |
             jq -r '.value[] | select(.name == "git-sdk-64-build-installers").resource.downloadUrl')
 
@@ -110,6 +128,8 @@ jobs:
   pkg:
     runs-on: windows-latest
     needs: bundle-artifacts
+    outputs:
+      latest-sdk64-extra-build-id: ${{ needs.bundle-artifacts.outputs.latest-sdk64-extra-build-id }}
     strategy:
       matrix:
         arch:
@@ -267,8 +287,15 @@ jobs:
         with:
           name: bundle-artifacts
           path: bundle-artifacts
-      - name: Download git-sdk-64-build-installers
+      - name: Cache git-sdk-64-build-installers
         if: env.SKIP != 'true' && matrix.arch.bitness == '64'
+        id: cache-sdk64-build-installers
+        uses: actions/cache@v2
+        with:
+          path: git-sdk-64-build-installers
+          key: build-installers-64-${{ needs.pkg.outputs.latest-sdk64-extra-build-id }}
+      - name: Download git-sdk-64-build-installers
+        if: env.SKIP != 'true' && matrix.arch.bitness == '64' && steps.cache-sdk64-build-installers.outputs.cache-hit != 'true'
         shell: bash
         run: |
           # Use Git Bash to download and unpack the artifact
@@ -283,16 +310,33 @@ jobs:
 
           ## Unpack artifact
           unzip artifacts.zip
-      - name: Download git-sdk-32-build-installers
+      - name: Determine latest git-sdk-32-extra-artifacts build ID
         if: env.SKIP != 'true' && matrix.arch.bitness == '32'
+        id: determine-latest-sdk32-extra-build-id
+        shell: bash
+        run: |
+          urlbase=https://dev.azure.com/git-for-windows/git/_apis/build/builds
+          id=$(curl "$urlbase?definitions=30&statusFilter=completed&resultFilter=succeeded&\$top=1" |
+            jq -r '.value[0].id')
+
+          echo "Latest ID is ${id}"
+          echo "::set-output name=id::$id"
+      - name: Cache git-sdk-32-build-installers
+        if: env.SKIP != 'true' && matrix.arch.bitness == '32'
+        id: cache-sdk32-build-installers
+        uses: actions/cache@v2
+        with:
+          path: git-sdk-32-build-installers
+          key: build-installers-32-${{ steps.determine-latest-sdk32-extra-build-id.outputs.id }}
+      - name: Download git-sdk-32-build-installers
+        if: env.SKIP != 'true' && matrix.arch.bitness == '32' && steps.cache-sdk32-build-installers.outputs.cache-hit != 'true'
         shell: bash
         run: |
           # Use Git Bash to download and unpack the artifact
 
           ## Get artifact
           urlbase=https://dev.azure.com/git-for-windows/git/_apis/build/builds
-          id=$(curl "$urlbase?definitions=30&statusFilter=completed&resultFilter=succeeded&\$top=1" |
-            jq -r '.value[0].id')
+          id=${{ steps.determine-latest-sdk32-extra-build-id.outputs.id }}
           download_url=$(curl "$urlbase/$id/artifacts" |
             jq -r '.value[] | select(.name == "git-sdk-32-build-installers").resource.downloadUrl')
 
@@ -384,8 +428,15 @@ jobs:
         with:
           name: bundle-artifacts
           path: bundle-artifacts
-      - name: Download git-sdk-64-build-installers
+      - name: Cache git-sdk-64-build-installers
         if: env.SKIP != 'true'
+        id: cache-sdk-build-installers
+        uses: actions/cache@v2
+        with:
+          path: git-sdk-64-build-installers
+          key: build-installers-64-${{ needs.pkg.outputs.latest-sdk64-extra-build-id }}
+      - name: Download git-sdk-64-build-installers
+        if: env.SKIP != 'true' && steps.cache-sdk-build-installers.outputs.cache-hit != 'true'
         shell: bash
         run: |
           # Use Git Bash to download and unpack the artifact
