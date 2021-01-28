@@ -28,12 +28,26 @@ jobs:
       - name: Download git-sdk-64-build-installers
         shell: bash
         run: |
-          a=git-sdk-64-build-installers && mkdir -p $a && curl -# https://wingit.blob.core.windows.net/ci-artifacts/$a.tar.xz | tar -C $a -xJf - &&
-          mkdir -p home &&
-          git config --global windows.sdk32.path '' &&
-          git config --global windows.sdk64.path "$PWD/$a"
+          # Use Git Bash to download and unpack the artifact
+
+          ## Add `json_pp` to the search path
+          PATH=$PATH:/usr/bin/core_perl
+
+          ## Get artifact
+          urlbase=https://dev.azure.com/git-for-windows/git/_apis/build/builds
+          id=$(curl "$urlbase?definitions=29&statusFilter=completed&resultFilter=succeeded&\$top=1" | json_pp |
+            sed -n 's/^         "id" : \([1-9][0-9]*\).*/\1/p')
+          download_url="$(curl "$urlbase/$id/artifacts" | json_pp |  sed -n '/^      {/{
+            :1;N;/\n      }/b2;b1;
+            :2;/"name" : "git-sdk-64-build-installers"/{s/.*"downloadUrl" : "\([^"]*\).*/\1/p}
+          }')"
+
+          curl -o artifacts.zip "$download_url"
+
+          ## Unpack artifact
+          unzip artifacts.zip
       - name: Clone build-extra
-        run: git clone --single-branch -b master https://github.com/git-for-windows/build-extra git-sdk-64-build-installers\usr\src\build-extra
+        run: git clone --single-branch -b main https://github.com/git-for-windows/build-extra git-sdk-64-build-installers\usr\src\build-extra
       - name: Prepare home directory for GPG signing
         if: env.GPGKEY != '' && env.PRIVGPGKEY != ''
         shell: bash
