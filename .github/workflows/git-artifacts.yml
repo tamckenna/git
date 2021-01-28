@@ -26,6 +26,7 @@ jobs:
     runs-on: windows-latest
     steps:
       - name: Set latest build ID
+        shell: bash
         run: |
           urlbase=https://dev.azure.com/git-for-windows/git/_apis/build/builds
           id=$(curl "$urlbase?definitions=29&statusFilter=completed&resultFilter=succeeded&\$top=1" | json_pp |
@@ -49,8 +50,7 @@ jobs:
 
           ## Get artifact
           urlbase=https://dev.azure.com/git-for-windows/git/_apis/build/builds
-          id=$(curl "$urlbase?definitions=29&statusFilter=completed&resultFilter=succeeded&\$top=1" | json_pp |
-            sed -n 's/^         "id" : \([1-9][0-9]*\).*/\1/p')
+          id=${{ env.LATEST_BUILD_ID }}
           download_url="$(curl "$urlbase/$id/artifacts" | json_pp |  sed -n '/^      {/{
             :1;N;/\n      }/b2;b1;
             :2;/"name" : "git-sdk-64-build-installers"/{s/.*"downloadUrl" : "\([^"]*\).*/\1/p}
