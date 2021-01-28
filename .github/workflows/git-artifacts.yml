@@ -35,7 +35,22 @@ jobs:
           git config --global user.email "$USER_EMAIL" &&
           git config --global user.signingkey mine &&
           echo "PACKAGER=$USER_NAME <$USER_EMAIL>" >>$GITHUB_ENV
+      - name: Determine latest git-sdk-64-extra-artifacts build ID
+        shell: bash
+        run: |
+          urlbase=https://dev.azure.com/git-for-windows/git/_apis/build/builds
+          id=$(curl "$urlbase?definitions=29&statusFilter=completed&resultFilter=succeeded&\$top=1" | json_pp |
+            sed -n 's/^         "id" : \([1-9][0-9]*\).*/\1/p')
+          echo "Latest ID is ${id}"
+          echo "LATEST_SDK64_EXTRA_BUILD_ID=${id}" >> $GITHUB_ENV
+      - name: Cache git-sdk-64-build-installers
+        id: cache-sdk-build-installers
+        uses: actions/cache@v2
+        with:
+          path: git-sdk-64-build-installers
+          key: ${{ env.LATEST_SDK64_EXTRA_BUILD_ID }}
       - name: Download git-sdk-64-build-installers
+        if: steps.cache-sdk-build-installers.cache-hit != 'true'
         shell: bash
         run: |
           # Use Git Bash to download and unpack the artifact
@@ -45,8 +60,7 @@ jobs:
 
           ## Get artifact
           urlbase=https://dev.azure.com/git-for-windows/git/_apis/build/builds
-          id=$(curl "$urlbase?definitions=29&statusFilter=completed&resultFilter=succeeded&\$top=1" | json_pp |
-            sed -n 's/^         "id" : \([1-9][0-9]*\).*/\1/p')
+          id=${{ env.LATEST_SDK64_EXTRA_BUILD_ID }}
           download_url="$(curl "$urlbase/$id/artifacts" | json_pp |  sed -n '/^      {/{
             :1;N;/\n      }/b2;b1;
             :2;/"name" : "git-sdk-64-build-installers"/{s/.*"downloadUrl" : "\([^"]*\).*/\1/p}
