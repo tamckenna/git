@@ -450,7 +450,7 @@ jobs:
         run: |
           & .\git-sdk-${{matrix.arch.bitness}}-build-installers\usr\bin\bash.exe -lc @"
             set -x
-            /usr/src/build-extra/please.sh make_installers_from_mingw_w64_git --extra-args="--include-arm64-artifacts=${{github.workspace}}/arm64" --version=`$(cat pkg-i686/ver) -o artifacts --${{matrix.artifact.name}} --pkg=pkg-i686/mingw-w64-i686-git-[0-9]*.tar.xz --pkg=pkg-i686/mingw-w64-i686-git-doc-html-[0-9]*.tar.xz &&
+            /usr/src/build-extra/please.sh make_installers_from_mingw_w64_git --extra-args=\"--include-arm64-artifacts=`$PWD/arm64\" --version=`$(cat pkg-i686/ver) -o artifacts --${{matrix.artifact.name}} --pkg=pkg-i686/mingw-w64-i686-git-[0-9]*.tar.xz --pkg=pkg-i686/mingw-w64-i686-git-doc-html-[0-9]*.tar.xz &&
             if test portable = '${{matrix.artifact.name}}' && test -n \"`$(git config alias.signtool)\"
             then
               git signtool artifacts/PortableGit-*.exe
