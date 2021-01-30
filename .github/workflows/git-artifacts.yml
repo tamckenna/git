@@ -151,7 +151,7 @@ jobs:
 
           ## Get artifact
           urlbase=https://dev.azure.com/git-for-windows/git/_apis/build/builds
-          id=${{ needs.pkg.outputs.latest-sdk64-extra-build-id }}
+          id=${{ needs.bundle-artifacts.outputs.latest-sdk64-extra-build-id }}
           download_url="$(curl "$urlbase/$id/artifacts" \
             | jq -r '.value[] | select(.name == "git-sdk-64-makepkg-git").resource.downloadUrl')"
 
@@ -288,7 +288,7 @@ jobs:
         uses: actions/cache@v2
         with:
           path: git-sdk-64-build-installers
-          key: ${{ needs.pkg.outputs.latest-sdk64-extra-build-id }}
+          key: ${{ needs.bundle-artifacts.outputs.latest-sdk64-extra-build-id }}
       - name: Download git-sdk-64-build-installers
         if: env.SKIP != 'true' && matrix.arch.bitness == '64' && steps.cache-sdk-build-installers.cache-hit != 'true'
         shell: bash
@@ -297,7 +297,7 @@ jobs:
 
           ## Get artifact
           urlbase=https://dev.azure.com/git-for-windows/git/_apis/build/builds
-          id=${{ needs.pkg.outputs.latest-sdk64-extra-build-id }}
+          id=${{ needs.bundle-artifacts.outputs.latest-sdk64-extra-build-id }}
           download_url="$(curl "$urlbase/$id/artifacts" \
             | jq -r '.value[] | select(.name == "git-sdk-64-build-installers").resource.downloadUrl')"
 
@@ -403,7 +403,7 @@ jobs:
         uses: actions/cache@v2
         with:
           path: git-sdk-64-build-installers
-          key: ${{ needs.pkg.outputs.latest-sdk64-extra-build-id }}
+          key: ${{ needs.bundle-artifacts.outputs.latest-sdk64-extra-build-id }}
       - name: Download git-sdk-64-build-installers
         if: env.SKIP != 'true' && steps.cache-sdk-build-installers.cache-hit != 'true'
         shell: bash
@@ -412,7 +412,7 @@ jobs:
 
           ## Get artifact
           urlbase=https://dev.azure.com/git-for-windows/git/_apis/build/builds
-          id=${{ needs.pkg.outputs.latest-sdk64-extra-build-id }}
+          id=${{ needs.bundle-artifacts.outputs.latest-sdk64-extra-build-id }}
           download_url=$(curl "$urlbase/$id/artifacts" \
             | jq -r '.value[] | select(.name == "git-sdk-64-build-installers").resource.downloadUrl')
 
