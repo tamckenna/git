@@ -73,7 +73,7 @@ jobs:
         # Make sure we always clone the latest build-extra, because it might be cached
         run: |
           Remove-Item "git-sdk-64-build-installers\usr\src\build-extra" -Recurse -ErrorAction Ignore
-          git clone --single-branch -b git-portable-arm64 https://github.com/dennisameling/build-extra git-sdk-64-build-installers\usr\src\build-extra
+          git clone --single-branch -b main https://github.com/git/build-extra git-sdk-64-build-installers\usr\src\build-extra
       - name: Prepare home directory for GPG signing
         if: env.GPGKEY != '' && env.PRIVGPGKEY != ''
         shell: bash
