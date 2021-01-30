@@ -296,7 +296,7 @@ jobs:
           path: git-sdk-64-build-installers
           key: ${{ needs.bundle-artifacts.outputs.latest-sdk64-extra-build-id }}
       - name: Download git-sdk-64-build-installers
-        if: env.SKIP != 'true' && matrix.arch.bitness == '64' && steps.cache-sdk-build-installers.cache-hit != 'true'
+        if: env.SKIP != 'true' && matrix.arch.bitness == '64' && steps.cache-sdk-build-installers.outputs.cache-hit != 'true'
         shell: bash
         run: |
           # Use Git Bash to download and unpack the artifact
@@ -411,7 +411,7 @@ jobs:
           path: git-sdk-64-build-installers
           key: ${{ needs.bundle-artifacts.outputs.latest-sdk64-extra-build-id }}
       - name: Download git-sdk-64-build-installers
-        if: env.SKIP != 'true' && steps.cache-sdk-build-installers.cache-hit != 'true'
+        if: env.SKIP != 'true' && steps.cache-sdk-build-installers.outputs.cache-hit != 'true'
         shell: bash
         run: |
           # Use Git Bash to download and unpack the artifact
