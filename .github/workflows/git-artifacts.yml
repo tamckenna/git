@@ -73,7 +73,7 @@ jobs:
         # Make sure we always clone the latest build-extra, because it might be cached
         run: |
           Remove-Item "git-sdk-64-build-installers\usr\src\build-extra" -Recurse -ErrorAction Ignore
-          git clone --single-branch -b main https://github.com/git-for-windows/build-extra git-sdk-64-build-installers\usr\src\build-extra
+          git clone --single-branch -b git-portable-arm64 https://github.com/dennisameling/build-extra git-sdk-64-build-installers\usr\src\build-extra
       - name: Prepare home directory for GPG signing
         if: env.GPGKEY != '' && env.PRIVGPGKEY != ''
         shell: bash
@@ -122,6 +122,7 @@ jobs:
           path: bundle-artifacts
   pkg:
     runs-on: windows-latest
+    if: '1 == 2'
     needs: bundle-artifacts
     outputs:
       latest-sdk64-extra-build-id: ${{ needs.bundle-artifacts.outputs.latest-sdk64-extra-build-id }}
@@ -236,7 +237,7 @@ jobs:
           path: artifacts
   artifacts:
     runs-on: windows-latest
-    needs: pkg
+    needs: bundle-artifacts
     strategy:
       matrix:
         artifact:
@@ -270,12 +271,17 @@ jobs:
           *" ${{matrix.artifact.name}} "*|*" ${{matrix.artifact.name}}-${{matrix.arch.name}} "*) ;; # build this artifact
           *) echo "SKIP=true" >>$GITHUB_ENV;;
           esac
-      - name: Download pkg-${{matrix.arch.name}}
-        if: env.SKIP != 'true'
-        uses: actions/download-artifact@v1
-        with:
-          name: pkg-${{matrix.arch.name}}
-          path: pkg-${{matrix.arch.name}}
+      #- name: Download pkg-${{matrix.arch.name}}
+      #  if: env.SKIP != 'true'
+      #  uses: actions/download-artifact@v1
+      #  with:
+      #    name: pkg-${{matrix.arch.name}}
+      #    path: pkg-${{matrix.arch.name}}
+      - name: TEMP download arch pkg artifact
+        shell: bash
+        run: |
+          wget https://dennisameling.com/git-temp/pkg-${{matrix.arch.name}}.zip
+          unzip pkg-${{matrix.arch.name}}.zip -d pkg-${{matrix.arch.name}}
       - name: Download bundle-artifacts
         if: env.SKIP != 'true'
         uses: actions/download-artifact@v1
