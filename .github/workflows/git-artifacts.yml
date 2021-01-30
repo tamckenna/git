@@ -24,6 +24,8 @@ env:
 jobs:
   bundle-artifacts:
     runs-on: windows-latest
+    outputs:
+      latest-sdk64-extra-build-id: ${{ steps.determine-latest-sdk64-extra-build-id.outputs.id }}
     steps:
       - name: Configure user
         shell: bash
@@ -33,22 +35,22 @@ jobs:
           mkdir "$HOME" &&
           git config --global user.name "$USER_NAME" &&
           git config --global user.email "$USER_EMAIL" &&
-          git config --global user.signingkey mine &&
           echo "PACKAGER=$USER_NAME <$USER_EMAIL>" >>$GITHUB_ENV
       - name: Determine latest git-sdk-64-extra-artifacts build ID
+        id: determine-latest-sdk64-extra-build-id
         shell: bash
         run: |
           urlbase=https://dev.azure.com/git-for-windows/git/_apis/build/builds
           id=$(curl "$urlbase?definitions=29&statusFilter=completed&resultFilter=succeeded&\$top=1" | json_pp |
             sed -n 's/^         "id" : \([1-9][0-9]*\).*/\1/p')
           echo "Latest ID is ${id}"
-          echo "LATEST_SDK64_EXTRA_BUILD_ID=${id}" >> $GITHUB_ENV
+          echo "::set-output name=id::$id"
       - name: Cache git-sdk-64-build-installers
         id: cache-sdk-build-installers
         uses: actions/cache@v2
         with:
           path: git-sdk-64-build-installers
-          key: ${{ env.LATEST_SDK64_EXTRA_BUILD_ID }}
+          key: ${{ steps.determine-latest-sdk64-extra-build-id.outputs.id }}
       - name: Download git-sdk-64-build-installers
         if: steps.cache-sdk-build-installers.cache-hit != 'true'
         shell: bash
@@ -60,7 +62,7 @@ jobs:
 
           ## Get artifact
           urlbase=https://dev.azure.com/git-for-windows/git/_apis/build/builds
-          id=${{ env.LATEST_SDK64_EXTRA_BUILD_ID }}
+          id=${{ steps.determine-latest-sdk64-extra-build-id.outputs.id }}
           download_url="$(curl "$urlbase/$id/artifacts" | json_pp |  sed -n '/^      {/{
             :1;N;/\n      }/b2;b1;
             :2;/"name" : "git-sdk-64-build-installers"/{s/.*"downloadUrl" : "\([^"]*\).*/\1/p}
@@ -121,6 +123,8 @@ jobs:
   pkg:
     runs-on: windows-latest
     needs: bundle-artifacts
+    outputs:
+      latest-sdk64-extra-build-id: ${{ needs.bundle-artifacts.outputs.latest-sdk64-extra-build-id }}
     strategy:
       matrix:
         arch:
@@ -139,11 +143,27 @@ jobs:
           mkdir "$HOME" &&
           git config --global user.name "$USER_NAME" &&
           git config --global user.email "$USER_EMAIL" &&
-          git config --global user.signingkey mine &&
           echo "PACKAGER=$USER_NAME <$USER_EMAIL>" >>$GITHUB_ENV
       - name: Download git-sdk-64-makepkg-git
         shell: bash
-        run: a=git-sdk-64-makepkg-git && mkdir -p $a && curl -# https://wingit.blob.core.windows.net/ci-artifacts/$a.tar.xz | tar -C $a -xJf -
+        run: |
+          # Use Git Bash to download and unpack the artifact
+
+          ## Add `json_pp` to the search path
+          PATH=$PATH:/usr/bin/core_perl
+
+          ## Get artifact
+          urlbase=https://dev.azure.com/git-for-windows/git/_apis/build/builds
+          id=${{ needs.pkg.outputs.latest-sdk64-extra-build-id }}
+          download_url="$(curl "$urlbase/$id/artifacts" | json_pp |  sed -n '/^      {/{
+            :1;N;/\n      }/b2;b1;
+            :2;/"name" : "git-sdk-64-makepkg-git"/{s/.*"downloadUrl" : "\([^"]*\).*/\1/p}
+          }')"
+
+          curl -o artifacts.zip "$download_url"
+
+          ## Unpack artifact
+          unzip artifacts.zip
       - name: Download bundle-artifacts
         uses: actions/download-artifact@v1
         with:
@@ -267,10 +287,57 @@ jobs:
         with:
           name: bundle-artifacts
           path: bundle-artifacts
-      - name: Download git-sdk-${{matrix.arch.bitness}}-build-installers
-        if: env.SKIP != 'true'
+      - name: Cache git-sdk-64-build-installers
+        if: env.SKIP != 'true' && matrix.arch.bitness == '64'
+        id: cache-sdk-build-installers
+        uses: actions/cache@v2
+        with:
+          path: git-sdk-64-build-installers
+          key: ${{ needs.pkg.outputs.latest-sdk64-extra-build-id }}
+      - name: Download git-sdk-64-build-installers
+        if: env.SKIP != 'true' && matrix.arch.bitness == '64' && steps.cache-sdk-build-installers.cache-hit != 'true'
         shell: bash
-        run: a=git-sdk-${{matrix.arch.bitness}}-build-installers && mkdir -p $a && curl -# https://wingit.blob.core.windows.net/ci-artifacts/$a.tar.xz | tar -C $a -xJf -
+        run: |
+          # Use Git Bash to download and unpack the artifact
+
+          ## Add `json_pp` to the search path
+          PATH=$PATH:/usr/bin/core_perl
+
+          ## Get artifact
+          urlbase=https://dev.azure.com/git-for-windows/git/_apis/build/builds
+          id=${{ needs.pkg.outputs.latest-sdk64-extra-build-id }}
+          download_url="$(curl "$urlbase/$id/artifacts" | json_pp |  sed -n '/^      {/{
+            :1;N;/\n      }/b2;b1;
+            :2;/"name" : "git-sdk-64-build-installers"/{s/.*"downloadUrl" : "\([^"]*\).*/\1/p}
+          }')"
+
+          curl -o artifacts.zip "$download_url"
+
+          ## Unpack artifact
+          unzip artifacts.zip
+      - name: Download git-sdk-32-build-installers
+        if: env.SKIP != 'true' && matrix.arch.bitness == '32'
+        shell: bash
+        run: |
+          # Use Git Bash to download and unpack the artifact
+
+          ## Add `json_pp` to the search path
+          PATH=$PATH:/usr/bin/core_perl
+
+          ## Get artifact
+          urlbase=https://dev.azure.com/git-for-windows/git/_apis/build/builds
+          id=$(curl "$url_base?definitions=30&statusFilter=completed&resultFilter=succeeded&\$top=1" |
+              json_pp | sed -n 's|^         "id" : \([0-9]*\),*$|\1|p')
+          download_url="$(curl "$urlbase/$id/artifacts" | json_pp |  sed -n '/^      {/{
+            :1;N;/\n      }/b2;b1;
+            :2;/"name" : "git-sdk-32-build-installers"/{s/.*"downloadUrl" : "\([^"]*\).*/\1/p}
+          }')"
+
+          curl -o artifacts.zip "$download_url"
+
+          ## Unpack artifact
+          unzip artifacts.zip
+          url_base=https://dev.azure.com/git-for-windows/git/_apis/build/builds
       - name: Clone build-extra
         if: env.SKIP != 'true'
         run: git clone --single-branch -b main https://github.com/git-for-windows/build-extra git-sdk-${{matrix.arch.bitness}}-build-installers\usr\src\build-extra
@@ -346,10 +413,34 @@ jobs:
         with:
           name: bundle-artifacts
           path: bundle-artifacts
-      - name: Download git-sdk-64-build-installers
+      - name: Cache git-sdk-64-build-installers
         if: env.SKIP != 'true'
+        id: cache-sdk-build-installers
+        uses: actions/cache@v2
+        with:
+          path: git-sdk-64-build-installers
+          key: ${{ needs.pkg.outputs.latest-sdk64-extra-build-id }}
+      - name: Download git-sdk-64-build-installers
+        if: env.SKIP != 'true' && steps.cache-sdk-build-installers.cache-hit != 'true'
         shell: bash
-        run: a=git-sdk-64-build-installers && mkdir -p $a && curl -# https://wingit.blob.core.windows.net/ci-artifacts/$a.tar.xz | tar -C $a -xJf -
+        run: |
+          # Use Git Bash to download and unpack the artifact
+
+          ## Add `json_pp` to the search path
+          PATH=$PATH:/usr/bin/core_perl
+
+          ## Get artifact
+          urlbase=https://dev.azure.com/git-for-windows/git/_apis/build/builds
+          id=${{ needs.pkg.outputs.latest-sdk64-extra-build-id }}
+          download_url="$(curl "$urlbase/$id/artifacts" | json_pp |  sed -n '/^      {/{
+            :1;N;/\n      }/b2;b1;
+            :2;/"name" : "git-sdk-64-build-installers"/{s/.*"downloadUrl" : "\([^"]*\).*/\1/p}
+          }')"
+
+          curl -o artifacts.zip "$download_url"
+
+          ## Unpack artifact
+          unzip artifacts.zip
       - name: Clone build-extra
         if: env.SKIP != 'true'
         run: git clone --single-branch -b main https://github.com/git-for-windows/build-extra git-sdk-64-build-installers\usr\src\build-extra
