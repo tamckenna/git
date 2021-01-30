@@ -345,10 +345,17 @@ jobs:
       #    name: pkg-${{matrix.arch.name}}
       #    path: pkg-${{matrix.arch.name}}
       - name: TEMP download arch pkg artifact
+        if: matrix.arch.name != 'arm64'
         shell: bash
         run: |
           curl https://dennisameling.com/git-temp/pkg-${{matrix.arch.name}}.zip -o pkg-${{matrix.arch.name}}.zip
           unzip pkg-${{matrix.arch.name}}.zip -d pkg-${{matrix.arch.name}}
+      - name: TEMP download arch pkg artifact arm64 (downoad i686)
+        if: matrix.arch.name == 'arm64'
+        shell: bash
+        run: |
+          curl https://dennisameling.com/git-temp/pkg-i686.zip -o pkg-i686.zip
+          unzip pkg-i686.zip -d pkg-i686
       - name: Download bundle-artifacts
         if: env.SKIP != 'true'
         uses: actions/download-artifact@v1
