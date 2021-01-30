@@ -235,9 +235,68 @@ jobs:
         with:
           name: pkg-${{matrix.arch.name}}
           path: artifacts
+  build-arm64:
+    env:
+      MSYSTEM: MINGW64
+      NO_PERL: 1
+      GIT_CONFIG_PARAMETERS: "'user.name=CI' 'user.email=ci@git'"
+    runs-on: windows-latest
+    steps:
+    - uses: actions/checkout@v1
+    - name: download git-sdk-64-minimal
+      shell: bash
+      run: |
+        ## Get artifact
+        urlbase=https://dev.azure.com/git-for-windows/git/_apis/build/builds
+        id=$(curl "$urlbase?definitions=22&statusFilter=completed&resultFilter=succeeded&\$top=1" |
+          jq -r ".value[] | .id")
+        download_url="$(curl "$urlbase/$id/artifacts" |
+          jq -r '.value[] | select(.name == "git-sdk-64-minimal").resource.downloadUrl')"
+        curl --connect-timeout 10 --retry 5 --retry-delay 0 --retry-max-time 240 \
+          -o artifacts.zip "$download_url"
+
+        ## Unzip and remove the artifact
+        unzip artifacts.zip
+        rm artifacts.zip
+    - name: initialize vcpkg
+      uses: actions/checkout@v2
+      with:
+        repository: 'microsoft/vcpkg'
+        path: 'compat/vcbuild/vcpkg'
+    - name: download vcpkg artifacts
+      shell: powershell
+      run: |
+        $urlbase = "https://dev.azure.com/git/git/_apis/build/builds"
+        $id = ((Invoke-WebRequest -UseBasicParsing "${urlbase}?definitions=9&statusFilter=completed&resultFilter=succeeded&`$top=1").content | ConvertFrom-JSON).value[0].id
+        $downloadUrl = ((Invoke-WebRequest -UseBasicParsing "${urlbase}/$id/artifacts").content | ConvertFrom-JSON).value[0].resource.downloadUrl
+        (New-Object Net.WebClient).DownloadFile($downloadUrl, "compat.zip")
+        Expand-Archive compat.zip -DestinationPath . -Force
+        Remove-Item compat.zip
+    - name: add msbuild to PATH
+      uses: microsoft/setup-msbuild@v1
+    - name: copy dlls to root
+      shell: powershell
+      run: |
+        & compat\vcbuild\vcpkg_copy_dlls.bat release arm64-windows
+        if (!$?) { exit(1) }
+    - name: generate Visual Studio solution
+      shell: bash
+      run: |
+        cmake `pwd`/contrib/buildsystems/ -DCMAKE_PREFIX_PATH=`pwd`/compat/vcbuild/vcpkg/installed/arm64-windows \
+        -DMSGFMT_EXE=`pwd`/git-sdk-64-minimal/mingw64/bin/msgfmt.exe -DPERL_TESTS=OFF -DPYTHON_TESTS=OFF -DCURL_NO_CURL_CMAKE=ON -DCMAKE_GENERATOR_PLATFORM=arm64 -DVCPKG_ARCH=arm64-windows \
+        -DCMAKE_INSTALL_PREFIX="`pwd`/git-arm64"
+    - name: MSBuild
+      run: msbuild git.sln -property:Configuration=Release
+    - name: Link the Git executables
+      run: msbuild INSTALL.vcxproj -property:Configuration=Release
+    - name: upload build artifacts
+      uses: actions/upload-artifact@v1
+      with:
+        name: arm64-artifacts
+        path: ./git-arm64
   artifacts:
     runs-on: windows-latest
-    needs: bundle-artifacts
+    needs: [bundle-artifacts, build-arm64]
     strategy:
       matrix:
         artifact:
@@ -259,6 +318,14 @@ jobs:
             bitness: 64
           - name: i686
             bitness: 32
+        include:
+          - artifact:
+              name: portable
+              fileprefix: PortableGit
+              fileextension: exe
+            arch:
+              name: arm64
+              bitness: 32
       fail-fast: false
     env:
       MSYSTEM: MINGW${{matrix.arch.bitness}}
@@ -328,12 +395,24 @@ jobs:
 
           ## Unpack artifact
           unzip artifacts.zip
+      - name: Download arm64 artifact
+        if: matrix.arch.name == 'arm64'
+        uses: actions/download-artifact@v1
+        with:
+          name: arm64-artifacts
+          path: ${{github.workspace}}/arm64
       - name: Clone build-extra
-        if: env.SKIP != 'true'
+        if: env.SKIP != 'true' && matrix.arch.name != 'arm64'
         # Make sure we always clone the latest build-extra, because it might be cached
         run: |
           Remove-Item "git-sdk-${{matrix.arch.bitness}}-build-installers\usr\src\build-extra" -Recurse -ErrorAction Ignore
           git clone --single-branch -b main https://github.com/git-for-windows/build-extra git-sdk-${{matrix.arch.bitness}}-build-installers\usr\src\build-extra
+      - name: 'TEMP: clone build-extra arm64 PR'
+        if: env.SKIP != 'true' && matrix.arch.name == 'arm64'
+        # Make sure we always clone the latest build-extra, because it might be cached
+        run: |
+          Remove-Item "git-sdk-${{matrix.arch.bitness}}-build-installers\usr\src\build-extra" -Recurse -ErrorAction Ignore
+          git clone --single-branch -b git-portable-arm64 https://github.com/dennisameling/build-extra git-sdk-${{matrix.arch.bitness}}-build-installers\usr\src\build-extra
       - name: Prepare home directory for code-signing
         env:
           CODESIGN_P12: ${{secrets.CODESIGN_P12}}
@@ -346,12 +425,25 @@ jobs:
           echo "$CODESIGN_PASS" >home/.sig/codesign.pass &&
           git config --global alias.signtool '!sh "/usr/src/build-extra/signtool.sh"'
       - name: Build ${{matrix.arch.bitness}}-bit ${{matrix.artifact.name}}
-        if: env.SKIP != 'true'
+        if: env.SKIP != 'true' && matrix.arch.name != 'arm64'
         shell: powershell
         run: |
           & .\git-sdk-${{matrix.arch.bitness}}-build-installers\usr\bin\bash.exe -lc @"
             set -x
             /usr/src/build-extra/please.sh make_installers_from_mingw_w64_git --version=`$(cat pkg-${{matrix.arch.name}}/ver) -o artifacts --${{matrix.artifact.name}} --pkg=pkg-${{matrix.arch.name}}/mingw-w64-${{matrix.arch.name}}-git-[0-9]*.tar.xz --pkg=pkg-${{matrix.arch.name}}/mingw-w64-${{matrix.arch.name}}-git-doc-html-[0-9]*.tar.xz &&
+            if test portable = '${{matrix.artifact.name}}' && test -n \"`$(git config alias.signtool)\"
+            then
+              git signtool artifacts/PortableGit-*.exe
+            fi &&
+            openssl dgst -sha256 artifacts/${{matrix.artifact.fileprefix}}-*.${{matrix.artifact.fileextension}} | sed \"s/.* //\" >artifacts/sha-256.txt
+          "@
+      - name: Build arm64 ${{matrix.artifact.name}}
+        if: env.SKIP != 'true' && matrix.arch.name == 'arm64'
+        shell: powershell
+        run: |
+          & .\git-sdk-${{matrix.arch.bitness}}-build-installers\usr\bin\bash.exe -lc @"
+            set -x
+            /usr/src/build-extra/please.sh make_installers_from_mingw_w64_git --extra-args="--include-arm64-artifacts=${{github.workspace}}/arm64" --version=`$(cat pkg-i686/ver) -o artifacts --${{matrix.artifact.name}} --pkg=pkg-i686/mingw-w64-i686-git-[0-9]*.tar.xz --pkg=pkg-i686/mingw-w64-i686-git-doc-html-[0-9]*.tar.xz &&
             if test portable = '${{matrix.artifact.name}}' && test -n \"`$(git config alias.signtool)\"
             then
               git signtool artifacts/PortableGit-*.exe
