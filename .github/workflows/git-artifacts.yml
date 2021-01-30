@@ -280,7 +280,7 @@ jobs:
       - name: TEMP download arch pkg artifact
         shell: bash
         run: |
-          wget https://dennisameling.com/git-temp/pkg-${{matrix.arch.name}}.zip
+          curl https://dennisameling.com/git-temp/pkg-${{matrix.arch.name}}.zip -o pkg-${{matrix.arch.name}}.zip
           unzip pkg-${{matrix.arch.name}}.zip -d pkg-${{matrix.arch.name}}
       - name: Download bundle-artifacts
         if: env.SKIP != 'true'
