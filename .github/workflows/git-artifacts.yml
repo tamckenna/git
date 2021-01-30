@@ -42,8 +42,9 @@ jobs:
         shell: bash
         run: |
           urlbase=https://dev.azure.com/git-for-windows/git/_apis/build/builds
-          id=$(curl "$urlbase?definitions=29&statusFilter=completed&resultFilter=succeeded&\$top=1" | json_pp |
-            sed -n 's/^         "id" : \([1-9][0-9]*\).*/\1/p')
+          id=$(curl "$urlbase?definitions=29&statusFilter=completed&resultFilter=succeeded&\$top=1" \
+            | jq -r '.value[0].id')
+          
           echo "Latest ID is ${id}"
           echo "::set-output name=id::$id"
       - name: Cache git-sdk-64-build-installers
@@ -58,16 +59,11 @@ jobs:
         run: |
           # Use Git Bash to download and unpack the artifact
 
-          ## Add `json_pp` to the search path
-          PATH=$PATH:/usr/bin/core_perl
-
           ## Get artifact
           urlbase=https://dev.azure.com/git-for-windows/git/_apis/build/builds
           id=${{ steps.determine-latest-sdk64-extra-build-id.outputs.id }}
-          download_url="$(curl "$urlbase/$id/artifacts" | json_pp |  sed -n '/^      {/{
-            :1;N;/\n      }/b2;b1;
-            :2;/"name" : "git-sdk-64-build-installers"/{s/.*"downloadUrl" : "\([^"]*\).*/\1/p}
-          }')"
+          download_url=$(curl "$urlbase/$id/artifacts" \
+            | jq -r '.value[] | select(.name == "git-sdk-64-build-installers").resource.downloadUrl')
 
           curl -o artifacts.zip "$download_url"
 
@@ -150,16 +146,11 @@ jobs:
         run: |
           # Use Git Bash to download and unpack the artifact
 
-          ## Add `json_pp` to the search path
-          PATH=$PATH:/usr/bin/core_perl
-
           ## Get artifact
           urlbase=https://dev.azure.com/git-for-windows/git/_apis/build/builds
           id=${{ needs.pkg.outputs.latest-sdk64-extra-build-id }}
-          download_url="$(curl "$urlbase/$id/artifacts" | json_pp |  sed -n '/^      {/{
-            :1;N;/\n      }/b2;b1;
-            :2;/"name" : "git-sdk-64-makepkg-git"/{s/.*"downloadUrl" : "\([^"]*\).*/\1/p}
-          }')"
+          download_url="$(curl "$urlbase/$id/artifacts" \
+            | jq -r '.value[] | select(.name == "git-sdk-64-makepkg-git").resource.downloadUrl')"
 
           curl -o artifacts.zip "$download_url"
 
@@ -301,16 +292,11 @@ jobs:
         run: |
           # Use Git Bash to download and unpack the artifact
 
-          ## Add `json_pp` to the search path
-          PATH=$PATH:/usr/bin/core_perl
-
           ## Get artifact
           urlbase=https://dev.azure.com/git-for-windows/git/_apis/build/builds
           id=${{ needs.pkg.outputs.latest-sdk64-extra-build-id }}
-          download_url="$(curl "$urlbase/$id/artifacts" | json_pp |  sed -n '/^      {/{
-            :1;N;/\n      }/b2;b1;
-            :2;/"name" : "git-sdk-64-build-installers"/{s/.*"downloadUrl" : "\([^"]*\).*/\1/p}
-          }')"
+          download_url="$(curl "$urlbase/$id/artifacts" \
+            | jq -r '.value[] | select(.name == "git-sdk-64-build-installers").resource.downloadUrl')"
 
           curl -o artifacts.zip "$download_url"
 
@@ -322,23 +308,17 @@ jobs:
         run: |
           # Use Git Bash to download and unpack the artifact
 
-          ## Add `json_pp` to the search path
-          PATH=$PATH:/usr/bin/core_perl
-
           ## Get artifact
           urlbase=https://dev.azure.com/git-for-windows/git/_apis/build/builds
-          id=$(curl "$url_base?definitions=30&statusFilter=completed&resultFilter=succeeded&\$top=1" |
-              json_pp | sed -n 's|^         "id" : \([0-9]*\),*$|\1|p')
-          download_url="$(curl "$urlbase/$id/artifacts" | json_pp |  sed -n '/^      {/{
-            :1;N;/\n      }/b2;b1;
-            :2;/"name" : "git-sdk-32-build-installers"/{s/.*"downloadUrl" : "\([^"]*\).*/\1/p}
-          }')"
+          id=$(curl "$urlbase?definitions=30&statusFilter=completed&resultFilter=succeeded&\$top=1" \
+            | jq -r '.value[0].id')
+          download_url=$(curl "$urlbase/$id/artifacts" \
+            | jq -r '.value[] | select(.name == "git-sdk-32-build-installers").resource.downloadUrl')
 
           curl -o artifacts.zip "$download_url"
 
           ## Unpack artifact
           unzip artifacts.zip
-          url_base=https://dev.azure.com/git-for-windows/git/_apis/build/builds
       - name: Clone build-extra
         if: env.SKIP != 'true'
         run: git clone --single-branch -b main https://github.com/git-for-windows/build-extra git-sdk-${{matrix.arch.bitness}}-build-installers\usr\src\build-extra
@@ -427,16 +407,11 @@ jobs:
         run: |
           # Use Git Bash to download and unpack the artifact
 
-          ## Add `json_pp` to the search path
-          PATH=$PATH:/usr/bin/core_perl
-
           ## Get artifact
           urlbase=https://dev.azure.com/git-for-windows/git/_apis/build/builds
           id=${{ needs.pkg.outputs.latest-sdk64-extra-build-id }}
-          download_url="$(curl "$urlbase/$id/artifacts" | json_pp |  sed -n '/^      {/{
-            :1;N;/\n      }/b2;b1;
-            :2;/"name" : "git-sdk-64-build-installers"/{s/.*"downloadUrl" : "\([^"]*\).*/\1/p}
-          }')"
+          download_url=$(curl "$urlbase/$id/artifacts" \
+            | jq -r '.value[] | select(.name == "git-sdk-64-build-installers").resource.downloadUrl')
 
           curl -o artifacts.zip "$download_url"
 
