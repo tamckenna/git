@@ -54,7 +54,7 @@ jobs:
           path: git-sdk-64-build-installers
           key: ${{ steps.determine-latest-sdk64-extra-build-id.outputs.id }}
       - name: Download git-sdk-64-build-installers
-        if: steps.cache-sdk-build-installers.cache-hit != 'true'
+        if: steps.cache-sdk-build-installers.outputs.cache-hit != 'true'
         shell: bash
         run: |
           # Use Git Bash to download and unpack the artifact
