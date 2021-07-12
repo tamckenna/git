@@ -49,6 +49,8 @@ to avoid this, add `-DNO_VCPKG=TRUE` to the command line when configuring.
 ]]
 cmake_minimum_required(VERSION 3.14)
 
+add_compile_definitions(_NO_OLDNAMES)
+
 #set the source directory to root of git
 set(CMAKE_SOURCE_DIR ${CMAKE_CURRENT_LIST_DIR}/../..)
 
@@ -695,7 +697,8 @@ endif()
 if(WIN32)
 	target_link_libraries(common-main ws2_32 ntdll ${CMAKE_BINARY_DIR}/git.res)
 	add_dependencies(common-main git-rc)
-	if(CMAKE_C_COMPILER_ID STREQUAL "GNU")
+	# MinGW Makefiles is used by the llvm-mingw toolchain on Windows (Clang)
+	if(CMAKE_C_COMPILER_ID STREQUAL "GNU" OR (CMAKE_GENERATOR STREQUAL "MinGW Makefiles" AND CMAKE_C_COMPILER_ID STREQUAL "Clang"))
 		target_link_options(common-main PUBLIC -municode -Wl,--nxcompat -Wl,--dynamicbase -Wl,--pic-executable,-e,mainCRTStartup)
 	elseif(CMAKE_C_COMPILER_ID STREQUAL "Clang")
 		target_link_options(common-main PUBLIC -municode -Wl,-nxcompat -Wl,-dynamicbase -Wl,-entry:wmainCRTStartup -Wl,invalidcontinue.obj)
@@ -705,8 +708,13 @@ if(WIN32)
 		message(FATAL_ERROR "Unhandled compiler: ${CMAKE_C_COMPILER_ID}")
 	endif()
 
-	add_executable(headless-git ${CMAKE_SOURCE_DIR}/compat/win32/headless.c)
-	target_link_options(headless-git PUBLIC /NOLOGO /ENTRY:wWinMainCRTStartup /SUBSYSTEM:WINDOWS)
+	#add_executable(headless-git ${CMAKE_SOURCE_DIR}/compat/win32/headless.c)
+	# MinGW Makefiles is used by the llvm-mingw toolchain on Windows (Clang)
+	if (CMAKE_GENERATOR STREQUAL "MinGW Makefiles" AND CMAKE_C_COMPILER_ID STREQUAL "Clang")
+		#target_link_options(headless-git PUBLIC -mwindows -Wl,--pic-executable,-e,WinMainCRTStartup)
+	else()
+		#target_link_options(headless-git PUBLIC /NOLOGO /ENTRY:wWinMainCRTStartup /SUBSYSTEM:WINDOWS)
+	endif()
 elseif(UNIX)
 	target_link_libraries(common-main pthread rt)
 endif()

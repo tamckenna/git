@@ -1,0 +1,136 @@
+name: LLVM build
+
+on:
+  pull_request:
+
+env:
+  LLVM_VERSION: 20210423
+  LLVM_TYPE: msvcrt
+  VCPKG_VERSION_FOR_CACHE: 1
+  DEVELOPER: 1
+
+jobs:
+  vcpkg:
+    runs-on: windows-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        arch: [arm64, x64]
+    steps:
+    - uses: actions/checkout@v2
+    - shell: cmd
+      run: where windres
+    - name: Set LLVM path
+      shell: bash
+      run: echo "LLVM_PATH=`pwd`/llvm-build/llvm-mingw-${{ env.LLVM_VERSION }}-${{ env.LLVM_TYPE }}-x86_64" >> $GITHUB_ENV
+    - name: Cache LLVM
+      id: cache-llvm
+      uses: actions/cache@v2
+      with:
+        path: llvm-build
+        key: llvm-build-${{ env.LLVM_VERSION }}-${{ env.LLVM_TYPE }}
+    - shell: pwsh
+      if: steps.cache-llvm.outputs.cache-hit != 'true'
+      run: |
+        Invoke-WebRequest -Uri "https://github.com/mstorsjo/llvm-mingw/releases/download/${{ env.LLVM_VERSION }}/llvm-mingw-${{ env.LLVM_VERSION }}-${{ env.LLVM_TYPE }}-x86_64.zip" -OutFile "./llvm.zip"
+        Expand-Archive -LiteralPath './llvm.zip' -DestinationPath ./llvm-build
+    - name: initialize vcpkg
+      uses: actions/checkout@v2
+      with:
+        repository: 'dennisameling/vcpkg'
+        ref: 'llvm-mingw-clang'
+        path: 'compat/vcbuild/vcpkg'
+    - name: Cache vcpkg artifacts
+      id: cache-vcpkg
+      uses: actions/cache@v2
+      with:
+        path: compat/vcbuild/vcpkg/installed
+        key: vcpkg-cache-${{ env.VCPKG_VERSION_FOR_CACHE }}-${{ matrix.arch }}-${{ env.LLVM_VERSION }}-${{ env.LLVM_TYPE }}
+    - name: build packages
+      if: steps.cache-vcpkg.outputs.cache-hit != 'true'
+      shell: pwsh
+      run: .\compat\vcbuild\vcpkg_install.bat ${{ matrix.arch }}-windows-llvm-mingw
+      env:
+        # Temp workaround to get the paths to work
+        LLVM_PATH: D:/a/git/git/llvm-build/llvm-mingw-${{ env.LLVM_VERSION }}-${{ env.LLVM_TYPE }}-x86_64
+        VCPKG_ROOT: D:/a/git/git/compat/vcbuild/vcpkg
+        VCPKG_KEEP_ENV_VARS: "LLVM_PATH;VCPKG_ROOT"
+    - name: upload vcpkg artifacts
+      uses: actions/upload-artifact@v2
+      with:
+        name: vcpkg-artifacts-${{ matrix.arch }}
+        path: compat/vcbuild/vcpkg/installed
+
+  llvm-build:
+    needs: vcpkg
+    runs-on: windows-latest
+    env:
+      NO_PERL: 1
+      GIT_CONFIG_PARAMETERS: "'user.name=CI' 'user.email=ci@git'"
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arch: x64
+            compilerArch: x86_64
+          - arch: arm64
+            compilerArch: aarch64
+    steps:
+    - uses: actions/checkout@v2
+    - name: Set LLVM path
+      shell: bash
+      run: echo "LLVM_PATH=`pwd`/llvm-build/llvm-mingw-${{ env.LLVM_VERSION }}-${{ env.LLVM_TYPE }}-x86_64" >> $GITHUB_ENV
+    - name: Cache LLVM
+      id: cache-llvm
+      uses: actions/cache@v2
+      with:
+        path: llvm-build
+        key: llvm-build-${{ env.LLVM_VERSION }}-${{ env.LLVM_TYPE }}
+    - shell: pwsh
+      if: steps.cache-llvm.outputs.cache-hit != 'true'
+      run: |
+        Invoke-WebRequest -Uri "https://github.com/mstorsjo/llvm-mingw/releases/download/${{ env.LLVM_VERSION }}/llvm-mingw-${{ env.LLVM_VERSION }}-${{ env.LLVM_TYPE }}-x86_64.zip" -OutFile "./llvm.zip"
+        Expand-Archive -LiteralPath './llvm.zip' -DestinationPath ./llvm-build
+    - name: initialize vcpkg
+      uses: actions/checkout@v2
+      with:
+        repository: 'microsoft/vcpkg'
+        path: 'compat/vcbuild/vcpkg'
+    - name: download vcpkg artifacts
+      uses: actions/download-artifact@v2
+      with:
+        name: vcpkg-artifacts-${{ matrix.arch }}
+        path: compat/vcbuild/vcpkg/installed
+    - name: save Makefile as CMake overwrites it
+      run: cp Makefile Makefile-bup
+    - name: copy dlls to root
+      shell: cmd
+      run: compat\vcbuild\vcpkg_copy_dlls.bat release ${{ matrix.arch }}-windows-llvm-mingw
+    - shell: bash
+      run: |
+        mkdir -p artifacts/install
+        cmake `pwd`/contrib/buildsystems/ -DCMAKE_PREFIX_PATH=`pwd`/compat/vcbuild/vcpkg/installed/${{ matrix.arch }}-windows-llvm-mingw -DVCPKG_ARCH=${{ matrix.arch }}-windows-llvm-mingw \
+        -DNO_GETTEXT=YesPlease -DPERL_TESTS=OFF -DPYTHON_TESTS=OFF -DCURL_NO_CURL_CMAKE=ON -DCMAKE_C_COMPILER=${{ env.LLVM_PATH }}/bin/${{ matrix.compilerArch }}-w64-mingw32-clang.exe \
+        -DCMAKE_CXX_COMPILER=${{ env.LLVM_PATH }}/bin/${{ matrix.compilerArch }}-w64-mingw32-clang++.exe -DCMAKE_INSTALL_PREFIX=`pwd`/artifacts/install -G "MinGW Makefiles"
+    - shell: pwsh
+      run: make -j2
+    - shell: pwsh
+      run: make install
+    - name: restore original Makefile
+      run: |
+        rm Makefile
+        mv Makefile-bup Makefile
+    - uses: git-for-windows/setup-git-for-windows-sdk@v1
+    - name: bundle artifact tar
+      shell: bash
+      env:
+        MSVC: 1
+        VCPKG_ROOT: ${{github.workspace}}\compat\vcbuild\vcpkg
+      run: eval "$(make -n artifacts-tar INCLUDE_DLLS_IN_ARTIFACTS=YesPlease ARTIFACTS_DIRECTORY=artifacts 2>&1 | grep ^tar)"
+    - name: zip up tracked files
+      run: git archive -o artifacts/tracked.tar.gz HEAD
+    - name: upload tracked files and build artifacts
+      uses: actions/upload-artifact@v2
+      with:
+        name: llvm-artifacts-${{ matrix.arch }}
+        path: artifacts

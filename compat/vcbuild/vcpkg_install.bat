@@ -49,9 +49,11 @@ REM ================================================================
 	echo "***"
 	EXIT /B 1 )
 
-	echo Fetching vcpkg in %cwd%vcpkg
-	git.exe clone https://github.com/Microsoft/vcpkg vcpkg
-	IF ERRORLEVEL 1 ( EXIT /B 1 )
+	IF NOT EXIST vcpkg (
+		echo Fetching vcpkg in %cwd%vcpkg
+		git.exe clone https://github.com/Microsoft/vcpkg vcpkg
+		IF ERRORLEVEL 1 ( EXIT /B 1 )
+	)
 
 	cd vcpkg
 	echo Building vcpkg
