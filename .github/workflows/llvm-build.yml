@@ -121,6 +121,8 @@ jobs:
         rm Makefile
         mv Makefile-bup Makefile
     - uses: git-for-windows/setup-git-for-windows-sdk@v1
+    - name: tmate to the rescue
+      uses: mxschmitt/action-tmate@v3
     - name: bundle artifact tar
       shell: bash
       env:
