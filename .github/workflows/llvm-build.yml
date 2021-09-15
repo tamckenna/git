@@ -115,6 +115,7 @@ jobs:
     - shell: pwsh
       run: make install
     - name: Copy DLLs
+      shell: bash
       # Workaround to get the DLLs into the installation directory
       run: |
         cp `pwd`/compat/vcbuild/vcpkg/installed/${{ matrix.arch }}-windows-llvm-mingw/bin/*.dll `pwd`/artifacts/bin
