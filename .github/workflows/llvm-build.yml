@@ -101,35 +101,25 @@ jobs:
       with:
         name: vcpkg-artifacts-${{ matrix.arch }}
         path: compat/vcbuild/vcpkg/installed
-    - name: save Makefile as CMake overwrites it
-      run: cp Makefile Makefile-bup
     - name: copy dlls to root
       shell: cmd
       run: compat\vcbuild\vcpkg_copy_dlls.bat release ${{ matrix.arch }}-windows-llvm-mingw
     - shell: bash
       run: |
-        mkdir -p artifacts/install
+        mkdir `pwd`/artifacts
         cmake `pwd`/contrib/buildsystems/ -DCMAKE_PREFIX_PATH=`pwd`/compat/vcbuild/vcpkg/installed/${{ matrix.arch }}-windows-llvm-mingw -DVCPKG_ARCH=${{ matrix.arch }}-windows-llvm-mingw \
         -DNO_GETTEXT=YesPlease -DPERL_TESTS=OFF -DPYTHON_TESTS=OFF -DCURL_NO_CURL_CMAKE=ON -DCMAKE_C_COMPILER=${{ env.LLVM_PATH }}/bin/${{ matrix.compilerArch }}-w64-mingw32-clang.exe \
-        -DCMAKE_CXX_COMPILER=${{ env.LLVM_PATH }}/bin/${{ matrix.compilerArch }}-w64-mingw32-clang++.exe -DCMAKE_INSTALL_PREFIX=`pwd`/artifacts/install -G "MinGW Makefiles"
+        -DCMAKE_CXX_COMPILER=${{ env.LLVM_PATH }}/bin/${{ matrix.compilerArch }}-w64-mingw32-clang++.exe -DCMAKE_INSTALL_PREFIX=`pwd`/artifacts -G "MinGW Makefiles"
     - shell: pwsh
       run: make -j2
     - shell: pwsh
       run: make install
-    - name: restore original Makefile
+    - name: Copy DLLs
+      # Workaround to get the DLLs into the installation directory
       run: |
-        rm Makefile
-        mv Makefile-bup Makefile
-    - uses: git-for-windows/setup-git-for-windows-sdk@v1
-    - name: bundle artifact tar
-      shell: bash
-      env:
-        MSVC: 1
-        VCPKG_ROOT: ${{github.workspace}}\compat\vcbuild\vcpkg
-      run: eval "$(make -n artifacts-tar INCLUDE_DLLS_IN_ARTIFACTS=YesPlease ARTIFACTS_DIRECTORY=artifacts 2>&1 | grep ^tar)"
-    - name: zip up tracked files
-      run: git archive -o artifacts/tracked.tar.gz HEAD
-    - name: upload tracked files and build artifacts
+        cp `pwd`/compat/vcbuild/vcpkg/installed/${{ matrix.arch }}-windows-llvm-mingw/bin/*.dll `pwd`/artifacts/bin
+        cp `pwd`/compat/vcbuild/vcpkg/installed/${{ matrix.arch }}-windows-llvm-mingw/bin/*.dll `pwd`/artifacts/libexec/git-core
+    - name: upload build artifacts
       uses: actions/upload-artifact@v2
       with:
         name: llvm-artifacts-${{ matrix.arch }}
