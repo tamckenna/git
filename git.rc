@@ -11,7 +11,7 @@ BEGIN
       VALUE "InternalName", "git\0"
       VALUE "OriginalFilename", "git.exe\0"
       VALUE "ProductName", "Git\0"
-      VALUE "ProductVersion", GIT_VERSION "\0"
+      VALUE "ProductVersion", "DEMO\0"
     END
   END
 

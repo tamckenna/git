@@ -201,9 +201,13 @@ endif()
 
 
 if(WIN32 AND NOT MSVC)#not required for visual studio builds
-	find_program(WINDRES_EXE windres)
-	if(NOT WINDRES_EXE)
-		message(FATAL_ERROR "Install windres on Windows for resource files")
+	if(CMAKE_RC_COMPILER)
+		set(WINDRES_EXE ${CMAKE_RC_COMPILER})
+	else()
+		find_program(WINDRES_EXE windres)
+		if(NOT WINDRES_EXE)
+			message(FATAL_ERROR "Install windres on Windows for resource files")
+		endif()
 	endif()
 endif()
 
