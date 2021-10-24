@@ -311,21 +311,15 @@ jobs:
           pacman -S --noconfirm mingw-w64-clang-aarch64-openssl mingw-w64-clang-aarch64-zlib \
           mingw-w64-clang-aarch64-curl mingw-w64-clang-aarch64-expat \
           mingw-w64-clang-aarch64-libiconv mingw-w64-clang-aarch64-toolchain
-      - name: Set MSYS2 root
+      - name: Set MSYS2 root as env variable
         if: env.SKIP != 'true'
         shell: msys2 {0}
-        run: |
-          which cygpath
-          cygpath -m /
-          echo "MSYS_ROOT=$(cygpath -m /)" >> $GITHUB_ENV
+        run: echo "MSYS_ROOT=$(cygpath -m /)" >> $GITHUB_ENV
       - shell: bash
         if: env.SKIP != 'true'
+        # We need to remove mingw32-make.exe (which is arm64-native) as it clashes with cmake
         run: |
-          which make
-          which bash
           rm ${{ env.MSYS_ROOT }}clangarm64/bin/mingw32-make.exe
-          which make
-          echo $PATH
           mkdir `pwd`/git-arm64
           cmake `pwd`/contrib/buildsystems/ -DCMAKE_PREFIX_PATH=${{ env.MSYS_ROOT }}clangarm64 -DNO_GETTEXT=YesPlease \
           -DPERL_TESTS=OFF -DPYTHON_TESTS=OFF -DCURL_NO_CURL_CMAKE=ON \
