@@ -23,6 +23,9 @@ env:
   BUILD_ONLY: "${{github.event.inputs.build_only}}"
   REPOSITORY: "${{github.event.inputs.repository}}"
   REF: "${{github.event.inputs.ref}}"
+  LLVM_VERSION: 20211002
+  LLVM_TYPE: msvcrt
+  VCPKG_VERSION_FOR_CACHE: 1
 
 jobs:
   bundle-artifacts:
@@ -200,9 +203,9 @@ jobs:
           printf '#!/bin/sh\n\nexec /mingw64/bin/git.exe "$@"\n' >/usr/bin/git &&
 
           # Restrict `PATH` to MSYS2 and to Visual Studio (to let `cv2pdb` find the relevant DLLs)
-          PATH="/mingw64/bin:/usr/bin:/C/Program Files (x86)/Microsoft Visual Studio 14.0/VC/bin${{matrix.arch.bin}}:/C/Windows/system32"
+          PATH="/mingw64/bin:/usr/bin:/C/Windows/system32"
 
-          type -p mspdb140.dll || exit 1
+          # type -p mspdb140.dll || exit 1
           sh -x /usr/src/build-extra/please.sh build-mingw-w64-git --only-${{matrix.arch.bitness}}-bit --build-src-pkg -o artifacts HEAD &&
           cp bundle-artifacts/ver artifacts/ &&
           if test -n "$GPGKEY"
@@ -268,43 +271,85 @@ jobs:
           git remote add -f origin https://github.com/git-for-windows/git &&
           git fetch --tags bundle-artifacts/git.bundle $(cat bundle-artifacts/next_version) &&
           git reset --hard $(cat bundle-artifacts/next_version)
-      - name: initialize vcpkg
-        if: env.SKIP != 'true'
-        uses: actions/checkout@v2
-        with:
-          repository: 'microsoft/vcpkg'
-          path: 'compat/vcbuild/vcpkg'
-      - name: download vcpkg artifacts
-        if: env.SKIP != 'true'
-        uses: git-for-windows/get-azure-pipelines-artifact@v0
-        with:
-          repository: git/git
-          definitionId: 9
-      - name: add msbuild to PATH
-        if: env.SKIP != 'true'
-        uses: microsoft/setup-msbuild@v1
-      - name: copy dlls to root
-        if: env.SKIP != 'true'
-        shell: powershell
-        run: |
-          & compat\vcbuild\vcpkg_copy_dlls.bat release arm64-windows
-          if (!$?) { exit(1) }
-      - name: generate Visual Studio solution
+      - name: Set LLVM path
         if: env.SKIP != 'true'
         shell: bash
+        run: echo "LLVM_PATH=`pwd`/llvm-build/llvm-mingw-${{ env.LLVM_VERSION }}-${{ env.LLVM_TYPE }}-x86_64" >> $GITHUB_ENV
+      - name: Cache LLVM
+        if: env.SKIP != 'true'
+        id: cache-llvm
+        uses: actions/cache@v2
+        with:
+          path: llvm-build
+          key: llvm-build-${{ env.LLVM_VERSION }}-${{ env.LLVM_TYPE }}
+      - shell: pwsh
+        if: steps.cache-llvm.outputs.cache-hit != 'true' && env.SKIP != 'true'
         run: |
-          cmake `pwd`/contrib/buildsystems/ -DCMAKE_PREFIX_PATH=`pwd`/compat/vcbuild/vcpkg/installed/arm64-windows \
-          -DNO_GETTEXT=YesPlease -DPERL_TESTS=OFF -DPYTHON_TESTS=OFF -DCURL_NO_CURL_CMAKE=ON -DCMAKE_GENERATOR_PLATFORM=arm64 -DVCPKG_ARCH=arm64-windows \
-          -DCMAKE_INSTALL_PREFIX="`pwd`/git-arm64" -DSKIP_DASHED_BUILT_INS=ON -DHOST_CPU=arm64
-      - name: MSBuild
+          Invoke-WebRequest -Uri "https://github.com/mstorsjo/llvm-mingw/releases/download/${{ env.LLVM_VERSION }}/llvm-mingw-${{ env.LLVM_VERSION }}-${{ env.LLVM_TYPE }}-x86_64.zip" -OutFile "./llvm.zip"
+          Expand-Archive -LiteralPath './llvm.zip' -DestinationPath ./llvm-build
+      - name: Setup MSYS2
         if: env.SKIP != 'true'
-        run: msbuild git.sln -property:Configuration=Release
-      - name: Link the Git executables
+        uses: msys2/setup-msys2@v2
+        with:
+          msystem: MSYS
+      - name: Add clangarm64 server
         if: env.SKIP != 'true'
-        run: msbuild INSTALL.vcxproj -property:Configuration=Release
+        shell: msys2 {0}
+        run: |
+          cat <<EOF >> /etc/pacman.conf
+          [clangarm64]
+          Server = https://mirror.msys2.org/mingw/clangarm64/
+          EOF
+      - name: Update package database with arm64 entries
+        if: env.SKIP != 'true'
+        shell: msys2 {0}
+        run: pacman -Sy
+      - name: Install packages
+        if: env.SKIP != 'true'
+        shell: msys2 {0}
+        run: |
+          pacman -S --noconfirm mingw-w64-clang-aarch64-openssl mingw-w64-clang-aarch64-zlib \
+          mingw-w64-clang-aarch64-curl mingw-w64-clang-aarch64-expat \
+          mingw-w64-clang-aarch64-libiconv mingw-w64-clang-aarch64-toolchain
+      - name: Set MSYS2 root as env variable
+        if: env.SKIP != 'true'
+        shell: msys2 {0}
+        run: echo "MSYS_ROOT=$(cygpath -m /)" >> $GITHUB_ENV
+      - shell: bash
+        if: env.SKIP != 'true'
+        # We need to remove mingw32-make.exe (which is arm64-native) as it clashes with cmake
+        run: |
+          rm ${{ env.MSYS_ROOT }}clangarm64/bin/mingw32-make.exe
+          mkdir `pwd`/git-arm64
+          cmake `pwd`/contrib/buildsystems/ -DCMAKE_PREFIX_PATH=${{ env.MSYS_ROOT }}clangarm64 -DNO_GETTEXT=YesPlease \
+          -DPERL_TESTS=OFF -DPYTHON_TESTS=OFF -DCURL_NO_CURL_CMAKE=ON \
+          -DCMAKE_C_COMPILER=${{ env.LLVM_PATH }}/bin/aarch64-w64-mingw32-clang.exe \
+          -DCMAKE_CXX_COMPILER=${{ env.LLVM_PATH }}/bin/aarch64-w64-mingw32-clang++.exe \
+          -DCMAKE_RC_COMPILER=${{ env.LLVM_PATH }}/bin/aarch64-w64-mingw32-windres.exe \
+          -DCMAKE_INSTALL_PREFIX=`pwd`/git-arm64 -DSKIP_DASHED_BUILT_INS=ON -DHOST_CPU=arm64 -DUSE_VCPKG=OFF -G "MinGW Makefiles"
+      - shell: pwsh
+        if: env.SKIP != 'true'
+        run: make -j2
+      - shell: pwsh
+        if: env.SKIP != 'true'
+        run: make install
+      # Workaround to get the DLLs into the installation directory
+      - name: Copy DLLs
+        if: env.SKIP != 'true'
+        shell: msys2 {0}
+        run: |
+          DLLS="libbrotlicommon.dll libbrotlidec.dll libcrypto-1_1.dll libcurl-4.dll libexpat-1.dll \
+          libiconv-2.dll libidn2-0.dll libintl-8.dll libnghttp2-14.dll libpsl-5.dll libssh2-1.dll \
+          libssl-1_1.dll libunistring-2.dll libwinpthread-1.dll libzstd.dll zlib1.dll"
+
+          for ITEM in ${DLLS}
+          do
+            cp /clangarm64/bin/${ITEM} `pwd`/git-arm64/bin
+            cp /clangarm64/bin/${ITEM} `pwd`/git-arm64/libexec/git-core
+          done
       - name: upload build artifacts
         if: env.SKIP != 'true'
-        uses: actions/upload-artifact@v1
+        uses: actions/upload-artifact@v2
         with:
           name: arm64-artifacts
           path: ./git-arm64
@@ -433,7 +478,7 @@ jobs:
           fi &&
           openssl dgst -sha256 artifacts/${{matrix.artifact.fileprefix}}-*.${{matrix.artifact.fileextension}} | sed "s/.* //" >artifacts/sha-256.txt
       - name: Copy package-versions and pdbs
-        if: env.SKIP != 'true' && matrix.artifact.name == 'installer'
+        if: env.SKIP != 'true' && matrix.artifact.name == 'installer' && 'skipThisForNow' == 'dummy'
         shell: bash
         run: |
           cp /usr/src/build-extra/installer/package-versions.txt artifacts/ &&
