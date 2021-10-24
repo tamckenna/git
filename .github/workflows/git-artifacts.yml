@@ -321,6 +321,11 @@ jobs:
       - shell: bash
         if: env.SKIP != 'true'
         run: |
+          which make
+          which bash
+          rm ${{ env.MSYS_ROOT }}clangarm64/mingw32-make.exe
+          which make
+          echo $PATH
           mkdir `pwd`/git-arm64
           cmake `pwd`/contrib/buildsystems/ -DCMAKE_PREFIX_PATH=${{ env.MSYS_ROOT }}clangarm64 -DNO_GETTEXT=YesPlease \
           -DPERL_TESTS=OFF -DPYTHON_TESTS=OFF -DCURL_NO_CURL_CMAKE=ON \
