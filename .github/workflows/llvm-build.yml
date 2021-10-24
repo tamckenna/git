@@ -1,0 +1,95 @@
+name: LLVM build
+
+on:
+  pull_request:
+
+env:
+  LLVM_VERSION: 20211002
+  LLVM_TYPE: msvcrt
+  DEVELOPER: 1
+
+jobs:
+  llvm-build:
+    runs-on: windows-latest
+    env:
+      NO_PERL: 1
+      GIT_CONFIG_PARAMETERS: "'user.name=CI' 'user.email=ci@git'"
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arch: x64
+            compilerArch: x86_64
+            msysArch: clang64
+          - arch: arm64
+            compilerArch: aarch64
+            msysArch: clangarm64
+    steps:
+    - uses: actions/checkout@v2
+    - name: Set LLVM path
+      shell: bash
+      run: echo "LLVM_PATH=`pwd`/llvm-build/llvm-mingw-${{ env.LLVM_VERSION }}-${{ env.LLVM_TYPE }}-x86_64" >> $GITHUB_ENV
+    - name: Cache LLVM
+      id: cache-llvm
+      uses: actions/cache@v2
+      with:
+        path: llvm-build
+        key: llvm-build-${{ env.LLVM_VERSION }}-${{ env.LLVM_TYPE }}
+    - shell: pwsh
+      if: steps.cache-llvm.outputs.cache-hit != 'true'
+      run: |
+        Invoke-WebRequest -Uri "https://github.com/mstorsjo/llvm-mingw/releases/download/${{ env.LLVM_VERSION }}/llvm-mingw-${{ env.LLVM_VERSION }}-${{ env.LLVM_TYPE }}-x86_64.zip" -OutFile "./llvm.zip"
+        Expand-Archive -LiteralPath './llvm.zip' -DestinationPath ./llvm-build
+    - name: Setup MSYS2
+      uses: msys2/setup-msys2@v2
+      with:
+        msystem: MSYS
+    - name: Add clangarm64 server
+      if: matrix.msysArch == 'clangarm64'
+      shell: msys2 {0}
+      run: |
+        cat <<EOF >> /etc/pacman.conf
+        [clangarm64]
+        Server = https://mirror.msys2.org/mingw/clangarm64/
+        EOF
+    - name: Update package database with arm64 entries
+      if: matrix.msysArch == 'clangarm64'
+      shell: msys2 {0}
+      run: pacman -Sy
+    - name: Install packages
+      shell: msys2 {0}
+      run: |
+        pacman -S --noconfirm mingw-w64-clang-${{ matrix.compilerArch }}-openssl mingw-w64-clang-${{ matrix.compilerArch }}-zlib \
+        mingw-w64-clang-${{ matrix.compilerArch }}-curl mingw-w64-clang-${{ matrix.compilerArch }}-expat \
+        mingw-w64-clang-${{ matrix.compilerArch }}-libiconv mingw-w64-clang-${{ matrix.compilerArch }}-toolchain
+    - shell: bash
+      run: |
+        mkdir `pwd`/artifacts
+        cmake `pwd`/contrib/buildsystems/ -DCMAKE_PREFIX_PATH=$(cygpath -m /${{ matrix.msysArch }}) -DNO_GETTEXT=YesPlease \
+        -DPERL_TESTS=OFF -DPYTHON_TESTS=OFF -DCURL_NO_CURL_CMAKE=ON \
+        -DCMAKE_C_COMPILER=${{ env.LLVM_PATH }}/bin/${{ matrix.compilerArch }}-w64-mingw32-clang.exe \
+        -DCMAKE_CXX_COMPILER=${{ env.LLVM_PATH }}/bin/${{ matrix.compilerArch }}-w64-mingw32-clang++.exe \
+        -DCMAKE_RC_COMPILER=${{ env.LLVM_PATH }}/bin/${{ matrix.compilerArch }}-w64-mingw32-windres.exe \
+        -DCMAKE_INSTALL_PREFIX=`pwd`/artifacts -DSKIP_DASHED_BUILT_INS=ON -DHOST_CPU=${{ matrix.arch }} -DUSE_VCPKG=OFF -G "MinGW Makefiles"
+    - shell: pwsh
+      run: make -j2
+    - shell: pwsh
+      run: make install
+    # Workaround to get the DLLs into the installation directory
+    - name: Copy DLLs
+      shell: msys2 {0}
+      run: |
+        DLLS="libbrotlicommon.dll libbrotlidec.dll libcrypto-1_1.dll libcurl-4.dll libexpat-1.dll \
+        libiconv-2.dll libidn2-0.dll libintl-8.dll libnghttp2-14.dll libpsl-5.dll libssh2-1.dll \
+        libssl-1_1.dll libunistring-2.dll libwinpthread-1.dll libzstd.dll zlib1.dll"
+
+        for ITEM in ${DLLS}
+        do
+          cp /${{ matrix.msysArch }}/bin/${ITEM} `pwd`/artifacts/bin
+          cp /${{ matrix.msysArch }}/bin/${ITEM} `pwd`/artifacts/libexec/git-core
+        done
+    - name: upload build artifacts
+      uses: actions/upload-artifact@v2
+      with:
+        name: llvm-artifacts-${{ matrix.arch }}
+        path: artifacts
