@@ -323,7 +323,7 @@ jobs:
         run: |
           which make
           which bash
-          rm ${{ env.MSYS_ROOT }}clangarm64/mingw32-make.exe
+          rm ${{ env.MSYS_ROOT }}clangarm64/bin/mingw32-make.exe
           which make
           echo $PATH
           mkdir `pwd`/git-arm64
