@@ -480,7 +480,7 @@ endif
 	CC = compat/vcbuild/scripts/clink.pl
 	AR = compat/vcbuild/scripts/lib.pl
 	CFLAGS =
-	BASIC_CFLAGS = -nologo -I. -Icompat/vcbuild/include -DWIN32 -D_CONSOLE -DHAVE_STRING_H -D_CRT_SECURE_NO_WARNINGS -D_CRT_NONSTDC_NO_DEPRECATE
+	BASIC_CFLAGS = -nologo -I. -Icompat/vcbuild/include -DWIN32 -D_CONSOLE -DHAVE_STRING_H -D_CRT_SECURE_NO_WARNINGS -D_CRT_NONSTDC_NO_DEPRECATE -MP -std:c11
 	COMPAT_OBJS = compat/msvc.o compat/winansi.o \
 		compat/win32/flush.o \
 		compat/win32/path-utils.o \
@@ -662,13 +662,12 @@ ifeq ($(uname_S),MINGW)
 	UNRELIABLE_FSTAT = UnfortunatelyYes
 	OBJECT_CREATION_USES_RENAMES = UnfortunatelyNeedsTo
 	NO_REGEX = YesPlease
-	NO_PYTHON = YesPlease
 	ETAGS_TARGET = ETAGS
 	NO_POSIX_GOODIES = UnfortunatelyYes
 	DEFAULT_HELP_FORMAT = html
 	HAVE_PLATFORM_PROCINFO = YesPlease
 	CSPRNG_METHOD = rtlgenrandom
-	BASIC_LDFLAGS += -municode
+	BASIC_LDFLAGS += -municode -Wl,--tsaware
 	COMPAT_CFLAGS += -DNOGDI -Icompat -Icompat/win32
 	COMPAT_CFLAGS += -DSTRIP_EXTENSION=\".exe\"
 	COMPAT_OBJS += compat/mingw.o compat/winansi.o \
@@ -693,6 +692,7 @@ ifneq (,$(wildcard ../THIS_IS_MSYSGIT))
 	INTERNAL_QSORT = YesPlease
 	HAVE_LIBCHARSET_H = YesPlease
 	NO_GETTEXT = YesPlease
+	NO_PYTHON = YesPlease
 	COMPAT_CFLAGS += -D__USE_MINGW_ACCESS
 else
 	ifneq ($(shell expr "$(uname_R)" : '1\.'),2)
@@ -728,13 +728,10 @@ else
 		INSTALL = /bin/install
 		INTERNAL_QSORT = YesPlease
 		HAVE_LIBCHARSET_H = YesPlease
-		NO_GETTEXT =
 		USE_GETTEXT_SCHEME = fallthrough
 		USE_LIBPCRE = YesPlease
 		NO_CURL =
-		ifneq (CLANGARM64,$(MSYSTEM))
-			USE_NED_ALLOCATOR = YesPlease
-		endif
+		USE_NED_ALLOCATOR = YesPlease
 		NO_PYTHON =
 		ifeq (/mingw64,$(subst 32,64,$(prefix)))
 			# Move system config into top-level /etc/
@@ -744,6 +741,7 @@ else
 	else
 		COMPAT_CFLAGS += -D__USE_MINGW_ANSI_STDIO
 		NO_CURL = YesPlease
+		NO_PYTHON = YesPlease
 	endif
 endif
 ifeq (i686,$(uname_M))
@@ -826,7 +824,7 @@ vcxproj:
 
 	# Make .vcxproj files and add them
 	perl contrib/buildsystems/generate -g Vcxproj
-	git add -f git.sln {*,*/lib.proj,t/helper/*}/*.vcxproj
+	git add -f git.sln {*,*/lib.proj,t/helper/*,reftable/libreftable{,_test}.proj}/*.vcxproj
 
 	# Generate the LinkOrCopyBuiltins.targets and LinkOrCopyRemoteHttp.targets file
 	(echo '<Project xmlns="http://schemas.microsoft.com/developer/msbuild/2003">' && \
@@ -858,9 +856,11 @@ vcxproj:
 	sed -i '/^git_broken_path_fix ".*/d' git-sh-setup
 	git add -f $(SCRIPT_LIB) $(SCRIPTS)
 
+ifndef NO_PERL
 	# Add Perl module
 	$(MAKE) $(LIB_PERL_GEN)
 	git add -f perl/build
+endif
 
 	# Add bin-wrappers, for testing
 	rm -rf bin-wrappers/

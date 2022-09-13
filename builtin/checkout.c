@@ -419,7 +419,7 @@ static int checkout_worktree(const struct checkout_opts *opts,
 	disable_fscache();
 	remove_marked_cache_entries(&the_index, 1);
 	remove_scheduled_dirs();
-	errs |= finish_delayed_checkout(&state, &nr_checkouts, opts->show_progress);
+	errs |= finish_delayed_checkout(&state, opts->show_progress);
 
 	if (opts->count_checkout_paths) {
 		if (nr_unmerged)
@@ -628,6 +628,7 @@ static void show_local_changes(struct object *head,
 	repo_init_revisions(the_repository, &rev, NULL);
 	rev.diffopt.flags = opts->flags;
 	rev.diffopt.output_format |= DIFF_FORMAT_NAME_STATUS;
+	rev.diffopt.flags.recursive = 1;
 	diff_setup_done(&rev.diffopt);
 	add_pending_object(&rev, head, NULL);
 	run_diff_index(&rev, 0);

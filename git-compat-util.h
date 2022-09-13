@@ -23,6 +23,9 @@
 #include <crtdbg.h>
 #endif
 
+struct strbuf;
+
+
 #define _FILE_OFFSET_BITS 64
 
 
@@ -182,7 +185,9 @@
 #define _ALL_SOURCE 1
 #define _GNU_SOURCE 1
 #define _BSD_SOURCE 1
+#ifndef _DEFAULT_SOURCE
 #define _DEFAULT_SOURCE 1
+#endif
 #define _NETBSD_SOURCE 1
 #define _SGI_SOURCE 1
 
@@ -360,6 +365,16 @@ char *gitdirname(char *);
 # include <sys/sysinfo.h>
 #endif
 
+#ifdef USE_MIMALLOC
+#include "mimalloc.h"
+#define malloc mi_malloc
+#define calloc mi_calloc
+#define realloc mi_realloc
+#define free mi_free
+#define strdup mi_strdup
+#define strndup mi_strndup
+#endif
+
 /* On most systems <netdb.h> would have given us this, but
  * not on some systems (e.g. z/OS).
  */
@@ -489,7 +504,7 @@ static inline void extract_id_from_env(const char *env, uid_t *id)
 	}
 }
 
-static inline int is_path_owned_by_current_uid(const char *path)
+static inline int is_path_owned_by_current_uid(const char *path, struct strbuf *report)
 {
 	struct stat st;
 	uid_t euid;
